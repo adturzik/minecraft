@@ -1,4 +1,4 @@
-import { BlockId, ToolTier, ToolType, getRawBlockDef, RAW_BLOCKS } from './blockDefs';
+import { BlockId, ToolTier, ToolType, RawBlockDef, getRawBlockDef, RAW_BLOCKS } from './blockDefs';
 
 // Items need a couple of tool kinds (sword, hoe) that never gate block
 // harvesting and so were deliberately left out of blockDefs.ToolType.
@@ -213,4 +213,22 @@ export function blockDropItemId(blockId: number): string | null {
   if (blockId === BlockId.Air) return null;
   const raw = getRawBlockDef(blockId);
   return raw.drop ?? raw.key;
+}
+
+/** Mining speed multiplier relative to bare hands, by tool tier — matching
+ * tool type is required to get any bonus at all (see miningSeconds). */
+const TOOL_SPEED: Record<ToolTier, number> = { hand: 1, wood: 2, stone: 4, iron: 6, diamond: 8 };
+
+/** Seconds needed to break a block of `blockDef` with `heldItem` in hand
+ * (null/mismatched tool = bare-hand speed). 0 = instant (leaves, flowers,
+ * torches, ...), Infinity = unbreakable (bedrock, fluids). Loosely mirrors
+ * vanilla Minecraft's hardness*1.5/speed formula. */
+export function miningSeconds(blockDef: RawBlockDef, heldItem: ItemDef | null): number {
+  if (blockDef.hardness === Infinity) return Infinity;
+  if (blockDef.hardness <= 0) return 0;
+  let speed = TOOL_SPEED.hand;
+  if (blockDef.toolType !== 'none' && heldItem?.toolType === blockDef.toolType) {
+    speed = TOOL_SPEED[heldItem.toolTier ?? 'hand'];
+  }
+  return (blockDef.hardness * 1.5) / speed;
 }

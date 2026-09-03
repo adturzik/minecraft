@@ -74,6 +74,62 @@ function makeSlotGrid(count: number, cols: number, onClick: ClickHandler): { roo
   return { root, els };
 }
 
+function armorPieceColor(slot: Slot): string | null {
+  if (!slot) return null;
+  const def = getItemDef(slot.itemId);
+  return `rgb(${def.color[0]},${def.color[1]},${def.color[2]})`;
+}
+
+const SKIN_COLOR = '#d9a066';
+const SHIRT_COLOR = '#4a7fc9';
+const PANTS_COLOR = '#3a4a6b';
+const BOOTS_COLOR = '#2a2a2a';
+
+/** Blocky front-facing character silhouette (head/torso/arms/legs/boots as
+ * flat rectangles, matching the rest of the UI's flat-swatch look). Colors
+ * reflect whatever's equipped in armorSlots, and the right hand shows the
+ * currently-selected hotbar item, so equipping gear is actually visible. */
+function buildCharacterPreview(inventory: Inventory): HTMLDivElement {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:3px;';
+
+  const stage = document.createElement('div');
+  stage.style.cssText = `position:relative;width:84px;height:132px;background:rgba(0,0,0,0.15);${bevel('sunken', 2)}box-sizing:border-box;`;
+
+  const helmetColor = armorPieceColor(inventory.armorSlots[0]) ?? SKIN_COLOR;
+  const chestColor = armorPieceColor(inventory.armorSlots[1]) ?? SHIRT_COLOR;
+  const legsColor = armorPieceColor(inventory.armorSlots[2]) ?? PANTS_COLOR;
+  const bootsColor = armorPieceColor(inventory.armorSlots[3]) ?? BOOTS_COLOR;
+
+  const part = (css: string, bg: string) => {
+    const d = document.createElement('div');
+    d.style.cssText = `position:absolute;box-shadow:inset 0 0 0 1px rgba(0,0,0,0.4);background:${bg};${css}`;
+    stage.appendChild(d);
+  };
+
+  part('left:30px;top:4px;width:24px;height:24px;', helmetColor); // head
+  part('left:22px;top:30px;width:40px;height:44px;', chestColor); // torso
+  part('left:10px;top:30px;width:12px;height:44px;', chestColor); // left arm (sleeve)
+  part('left:62px;top:30px;width:12px;height:44px;', SKIN_COLOR); // right arm (bare, holds item)
+  part('left:22px;top:76px;width:18px;height:30px;', legsColor); // left leg
+  part('left:44px;top:76px;width:18px;height:30px;', legsColor); // right leg
+  part('left:22px;top:106px;width:18px;height:8px;', bootsColor);
+  part('left:44px;top:106px;width:18px;height:8px;', bootsColor);
+
+  const heldStack = inventory.selectedStack;
+  if (heldStack) {
+    const def = getItemDef(heldStack.itemId);
+    part('left:60px;top:66px;width:16px;height:16px;box-shadow:inset 0 0 0 1px rgba(0,0,0,0.4), 0 0 0 1px #000;', `rgb(${def.color[0]},${def.color[1]},${def.color[2]})`);
+  }
+
+  wrap.appendChild(stage);
+  const label = document.createElement('div');
+  label.style.cssText = `font-size:10px;font-family:${BODY_FONT};color:#333;`;
+  label.textContent = 'Postava';
+  wrap.appendChild(label);
+  return wrap;
+}
+
 function craftArrow(): HTMLDivElement {
   const arrow = document.createElement('div');
   arrow.style.cssText = `width:0;height:0;border-top:10px solid transparent;border-bottom:10px solid transparent;border-left:16px solid ${STONE};filter:drop-shadow(1px 1px 0 #000);`;
@@ -112,7 +168,11 @@ export class GameUI {
   constructor() {
     this.buildHotbar();
     this.heldCursorEl = document.createElement('div');
-    this.heldCursorEl.style.cssText = 'position:fixed;width:36px;height:36px;pointer-events:none;z-index:1000;display:none;';
+    // Must render above screenRoot (z-index 1600) — this follows the cursor
+    // while an item is picked up inside the inventory/crafting/furnace
+    // screens, so a lower z-index made it invisible behind the panel the
+    // moment you clicked a slot (looked like the item just vanished).
+    this.heldCursorEl.style.cssText = 'position:fixed;width:36px;height:36px;pointer-events:none;z-index:1700;display:none;';
     document.body.appendChild(this.heldCursorEl);
     window.addEventListener('mousemove', (e) => {
       this.heldCursorEl.style.left = `${e.clientX - 18}px`;
@@ -192,6 +252,14 @@ export class GameUI {
     this.screenOpen = false;
     this.screenRoot.style.display = 'none';
     this.returnCraftGridToInventory();
+    // Whatever's still picked up on the cursor (e.g. a just-crafted item)
+    // has to go back into the inventory here too — otherwise closing the
+    // screen while holding something silently deleted it.
+    if (this.held) {
+      this.inventory.addItem(this.held.itemId, this.held.count);
+      this.held = null;
+      this.refreshHotbar();
+    }
     this.activeFurnacePos = null;
     this.onCloseScreen?.();
   }
@@ -316,8 +384,12 @@ export class GameUI {
     craftRow.style.cssText = 'display:flex;align-items:center;gap:10px;';
 
     if (!this.hasTable) {
+      const characterPanel = document.createElement('div');
+      characterPanel.style.cssText = 'display:flex;align-items:flex-start;gap:8px;margin-right:6px;';
+      characterPanel.appendChild(buildCharacterPreview(this.inventory));
+
       const armorCol = document.createElement('div');
-      armorCol.style.cssText = 'display:grid;grid-template-columns:repeat(1,40px);gap:2px;background:rgba(0,0,0,0.15);padding:4px;margin-right:6px;';
+      armorCol.style.cssText = 'display:grid;grid-template-columns:repeat(1,40px);gap:2px;background:rgba(0,0,0,0.15);padding:4px;';
       const ARMOR_LABEL: Record<string, string> = { helmet: 'HL', chestplate: 'CH', leggings: 'LG', boots: 'BT' };
       ARMOR_TYPES.forEach((type, i) => {
         const el = document.createElement('div');
@@ -340,7 +412,8 @@ export class GameUI {
         });
         armorCol.appendChild(el);
       });
-      craftRow.appendChild(armorCol);
+      characterPanel.appendChild(armorCol);
+      craftRow.appendChild(characterPanel);
     }
 
     const craftGridWidget = makeSlotGrid(this.craftGrid.length, this.craftGridSize, (i, r) => this.onCraftSlotClick(i, r));
