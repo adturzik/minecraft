@@ -15,7 +15,10 @@ export const MOB_CONFIGS: Record<MobKind, MobConfig> = {
     kind: 'cow', behavior: 'passive', maxHealth: 10, speed: 1.6,
     size: { halfWidth: 0.45, height: 1.4 }, buildMesh: buildCowMesh,
     attackDamage: 0, attackRange: 0, sightRange: 0,
-    drops: [{ itemId: 'raw_beef', min: 1, max: 3 }, { itemId: 'leather', min: 0, max: 2 }],
+    // wheat here (rather than a full farming/crop system) is what keeps the
+    // bread recipe from being permanently uncraftable -- nothing else in
+    // the game currently produces wheat.
+    drops: [{ itemId: 'raw_beef', min: 1, max: 3 }, { itemId: 'leather', min: 0, max: 2 }, { itemId: 'wheat', min: 0, max: 2 }],
   },
   pig: {
     kind: 'pig', behavior: 'passive', maxHealth: 10, speed: 1.6,

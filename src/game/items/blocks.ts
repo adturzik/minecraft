@@ -4,7 +4,6 @@ import {
   speckled,
   grain,
   rings,
-  crossFoliage,
   liquid,
   glassTile,
   emissiveGlow,
@@ -64,13 +63,66 @@ const T = {
   spruce_log_top: atlasBuilder.register('spruce_log_top', rings([100, 75, 50], [60, 42, 28])),
   spruce_leaves: atlasBuilder.register('spruce_leaves', speckled([40, 80, 50], [25, 60, 35], 0.35)),
   spruce_planks: atlasBuilder.register('spruce_planks', grain([120, 85, 55], [95, 65, 40])),
-  sapling: atlasBuilder.register('sapling', crossFoliage([70, 140, 50])),
-  tall_grass: atlasBuilder.register('tall_grass', crossFoliage([95, 159, 53])),
-  flower_red: atlasBuilder.register('flower_red', crossFoliage([200, 40, 40])),
-  flower_yellow: atlasBuilder.register('flower_yellow', crossFoliage([220, 200, 40])),
+  sapling: atlasBuilder.register('sapling', (ctx, px, py, size, rng) => {
+    speckled([100, 150, 200], [80, 130, 180], 0.08)(ctx, px, py, size, rng);
+    ctx.fillStyle = '#6b4a28';
+    ctx.fillRect(px + size / 2 - 1, py + size - 5, 2, 5);
+    ctx.fillStyle = '#3f8f2a';
+    ctx.beginPath();
+    ctx.arc(px + size / 2, py + size / 2 - 1, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#57b03a';
+    ctx.beginPath();
+    ctx.arc(px + size / 2 - 2, py + size / 2 - 2, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }),
+  tall_grass: atlasBuilder.register('tall_grass', (ctx, px, py, size, rng) => {
+    speckled([100, 150, 200], [80, 130, 180], 0.08)(ctx, px, py, size, rng);
+    for (let i = 0; i < 6; i++) {
+      const x = px + 1 + i * 2.5 + (rng() - 0.5);
+      const h = 6 + rng() * 7;
+      const lean = (rng() - 0.5) * 3;
+      ctx.strokeStyle = `rgb(${75 + rng() * 40},${140 + rng() * 30},${40 + rng() * 25})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x, py + size);
+      ctx.lineTo(x + lean, py + size - h);
+      ctx.stroke();
+    }
+  }),
+  flower_red: atlasBuilder.register('flower_red', (ctx, px, py, size, rng) => {
+    speckled([100, 150, 200], [80, 130, 180], 0.08)(ctx, px, py, size, rng);
+    ctx.fillStyle = '#3f8f2a';
+    ctx.fillRect(px + size / 2, py + size / 2, 1, size / 2 - 1);
+    const cx = px + size / 2, cy = py + size / 2 - 2;
+    ctx.fillStyle = '#d02020';
+    for (const [dx, dy] of [[0, -3], [0, 3], [-3, 0], [3, 0]]) ctx.fillRect(cx + dx - 1, cy + dy - 1, 3, 3);
+    ctx.fillStyle = '#f0c020';
+    ctx.fillRect(cx - 1, cy - 1, 2, 2);
+  }),
+  flower_yellow: atlasBuilder.register('flower_yellow', (ctx, px, py, size, rng) => {
+    speckled([100, 150, 200], [80, 130, 180], 0.08)(ctx, px, py, size, rng);
+    ctx.fillStyle = '#3f8f2a';
+    ctx.fillRect(px + size / 2, py + size / 2, 1, size / 2 - 1);
+    const cx = px + size / 2, cy = py + size / 2 - 2;
+    ctx.fillStyle = '#e8cc30';
+    for (const [dx, dy] of [[0, -3], [0, 3], [-3, 0], [3, 0]]) ctx.fillRect(cx + dx - 1, cy + dy - 1, 3, 3);
+    ctx.fillStyle = '#a86818';
+    ctx.fillRect(cx - 1, cy - 1, 2, 2);
+  }),
   cactus_side: atlasBuilder.register('cactus_side', speckled([60, 110, 50], [40, 90, 35], 0.1)),
   cactus_top: atlasBuilder.register('cactus_top', solid([70, 120, 55], 10)),
-  mushroom: atlasBuilder.register('mushroom', crossFoliage([200, 80, 60])),
+  mushroom: atlasBuilder.register('mushroom', (ctx, px, py, size, rng) => {
+    speckled([100, 150, 200], [80, 130, 180], 0.08)(ctx, px, py, size, rng);
+    ctx.fillStyle = '#e8ddc8';
+    ctx.fillRect(px + size / 2 - 1, py + size / 2 + 1, 2, size / 2 - 2);
+    ctx.fillStyle = '#c04030';
+    ctx.beginPath();
+    ctx.ellipse(px + size / 2, py + size / 2 - 1, 5, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#f0e0d0';
+    for (const [dx, dy] of [[-2, -2], [2, -1], [0, 0]]) ctx.fillRect(px + size / 2 + dx, py + size / 2 - 1 + dy, 1, 1);
+  }),
   coal_ore: atlasBuilder.register('coal_ore', speckled([128, 128, 128], [20, 20, 20], 0.18)),
   iron_ore: atlasBuilder.register('iron_ore', speckled([128, 128, 128], [200, 170, 130], 0.16)),
   gold_ore: atlasBuilder.register('gold_ore', speckled([128, 128, 128], [235, 200, 60], 0.16)),
@@ -90,7 +142,19 @@ const T = {
   }),
   torch: atlasBuilder.register(
     'torch',
-    crossFoliage([230, 180, 60]),
+    (ctx, px, py, size, rng) => {
+      speckled([100, 150, 200], [80, 130, 180], 0.08)(ctx, px, py, size, rng);
+      ctx.fillStyle = '#5a3a1e';
+      ctx.fillRect(px + size / 2 - 1, py + size / 2, 2, size / 2 - 1);
+      ctx.fillStyle = '#e89020';
+      ctx.beginPath();
+      ctx.ellipse(px + size / 2, py + size / 2 - 2, 3, 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffd860';
+      ctx.beginPath();
+      ctx.ellipse(px + size / 2, py + size / 2 - 3, 1.5, 2.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    },
     emissiveGlow([255, 200, 80])
   ),
   crafting_top: atlasBuilder.register('crafting_top', (ctx, px, py, size, rng) => {
@@ -119,7 +183,14 @@ const T = {
     ctx.fillStyle = '#c8a030';
     ctx.fillRect(px + size / 2 - 1, py + size / 2 - 2, 2, 4);
   }),
-  ladder: atlasBuilder.register('ladder', crossFoliage([120, 90, 55])),
+  ladder: atlasBuilder.register('ladder', (ctx, px, py, size, rng) => {
+    speckled([100, 150, 200], [80, 130, 180], 0.08)(ctx, px, py, size, rng);
+    ctx.fillStyle = '#8a6a3f';
+    ctx.fillRect(px + 1, py, 2, size);
+    ctx.fillRect(px + size - 3, py, 2, size);
+    ctx.fillStyle = '#6b4a28';
+    for (let y = 2; y < size; y += 4) ctx.fillRect(px + 1, py + y, size - 2, 2);
+  }),
   door: atlasBuilder.register('door', grain([150, 110, 65], [100, 75, 45])),
   obsidian: atlasBuilder.register('obsidian', speckled([25, 15, 40], [45, 30, 70], 0.2)),
   wool: atlasBuilder.register('wool', solid([235, 235, 235], 10)),
