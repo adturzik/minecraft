@@ -76,6 +76,7 @@ export class Mob extends Entity {
   }
 
   private moveToward(dir: THREE.Vector3, speed: number) {
+    if (this.knockbackTimer > 0) return; // let the pushed-back velocity play out untouched
     if (dir.lengthSq() > 0.0001) {
       const n = dir.clone().normalize();
       this.velocity.x = n.x * speed;
