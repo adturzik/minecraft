@@ -4,7 +4,7 @@ import { raycastVoxels } from './engine/world/voxelRaycast';
 import { PlayerController } from './game/player/playerController';
 import { BlockId, tierIndex, ToolTier } from './game/items/blockDefs';
 import { getBlockDef } from './game/items/blocks';
-import { blockDropItemId, getItemDef } from './game/items/items';
+import { blockDropItemId, getItemDef, miningSeconds } from './game/items/items';
 import { GameUI } from './ui/gameUI';
 import { FurnaceManager } from './game/crafting/furnaceManager';
 import { SurvivalState } from './game/player/survival';
@@ -167,6 +167,50 @@ function startGame(opts: PlayOptions) {
     'position:fixed;top:50%;left:50%;width:6px;height:6px;margin:-3px;background:#fff;mix-blend-mode:difference;border-radius:50%;pointer-events:none;display:none;';
   document.body.appendChild(crosshair);
 
+  // ---- mining progress (hold-to-break) ----
+  const miningBarOuter = document.createElement('div');
+  miningBarOuter.style.cssText =
+    'position:fixed;top:calc(50% + 14px);left:50%;transform:translateX(-50%);width:36px;height:5px;background:rgba(0,0,0,0.5);border:1px solid #000;display:none;z-index:20;';
+  const miningBarFill = document.createElement('div');
+  miningBarFill.style.cssText = 'height:100%;width:0%;background:#fff;';
+  miningBarOuter.appendChild(miningBarFill);
+  document.body.appendChild(miningBarOuter);
+
+  let leftMouseDown = false;
+  let miningTarget: { x: number; y: number; z: number } | null = null;
+  let miningProgress = 0;
+
+  function resetMining() {
+    leftMouseDown = false;
+    miningTarget = null;
+    miningProgress = 0;
+    miningBarOuter.style.display = 'none';
+  }
+
+  /** Breaks the block at (x,y,z): removes it, plays the sound, drops the
+   * harvested item (if the held tool meets the block's minimum tier) and
+   * damages the held tool. Shared by the instant-break path (hardness 0
+   * blocks) and the hold-to-mine completion path. */
+  function breakBlock(x: number, y: number, z: number) {
+    const brokenId = chunkManager.getBlock(x, y, z);
+    if (brokenId === BlockId.Air) return;
+    chunkManager.setBlock(x, y, z, BlockId.Air);
+    soundEngine.breakBlock();
+    if (brokenId === BlockId.Furnace) furnaceManager.remove(x, y, z);
+
+    const blockDef = getBlockDef(brokenId);
+    const heldId = gameUI.selectedItemId;
+    const heldItemDef = heldId ? getItemDef(heldId) : null;
+    const harvestable =
+      blockDef.toolType !== 'pickaxe' ||
+      (heldItemDef?.toolType === 'pickaxe' && tierIndex(heldItemDef.toolTier as ToolTier) >= tierIndex(blockDef.minToolTier));
+    if (harvestable) {
+      const dropId = blockDropItemId(brokenId);
+      if (dropId) gameUI.giveItem(dropId, 1);
+    }
+    gameUI.damageSelectedTool();
+  }
+
   const overlay = document.createElement('div');
   overlay.style.cssText =
     'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:rgba(0,0,0,0.55);color:#fff;text-align:center;z-index:1500;';
@@ -237,6 +281,7 @@ function startGame(opts: PlayOptions) {
   });
   player.controls.addEventListener('unlock', () => {
     crosshair.style.display = 'none';
+    resetMining();
     if (!gameUI.isOpen && !survival.dead) {
       renderOverlay();
       overlay.style.display = 'flex';
@@ -263,23 +308,9 @@ function startGame(opts: PlayOptions) {
     if (!currentHit) return;
 
     if (e.button === 0) {
-      const brokenId = chunkManager.getBlock(currentHit.x, currentHit.y, currentHit.z);
-      if (brokenId === BlockId.Air) return;
-      chunkManager.setBlock(currentHit.x, currentHit.y, currentHit.z, BlockId.Air);
-      soundEngine.breakBlock();
-      if (brokenId === BlockId.Furnace) furnaceManager.remove(currentHit.x, currentHit.y, currentHit.z);
-
-      const blockDef = getBlockDef(brokenId);
-      const heldId = gameUI.selectedItemId;
-      const heldItemDef = heldId ? getItemDef(heldId) : null;
-      const harvestable =
-        blockDef.toolType !== 'pickaxe' ||
-        (heldItemDef?.toolType === 'pickaxe' && tierIndex(heldItemDef.toolTier as ToolTier) >= tierIndex(blockDef.minToolTier));
-      if (harvestable) {
-        const dropId = blockDropItemId(brokenId);
-        if (dropId) gameUI.giveItem(dropId, 1);
-      }
-      gameUI.damageSelectedTool();
+      // Actual breaking happens over time in animate() (see the mining
+      // progress block below) — this just starts the hold.
+      leftMouseDown = true;
     } else if (e.button === 2) {
       const targetId = chunkManager.getBlock(currentHit.x, currentHit.y, currentHit.z);
       if (targetId === BlockId.CraftingTable) {
@@ -358,8 +389,14 @@ function startGame(opts: PlayOptions) {
       }
     }
   });
+  window.addEventListener('mouseup', (e) => {
+    if (e.button === 0) leftMouseDown = false;
+  });
 
-  gameUI.onOpenScreen = () => player.controls.unlock();
+  gameUI.onOpenScreen = () => {
+    player.controls.unlock();
+    resetMining();
+  };
   gameUI.onCloseScreen = () => {
     if (player.controls.domElement) player.lock();
   };
@@ -481,6 +518,37 @@ function startGame(opts: PlayOptions) {
       outline.visible = true;
     } else {
       outline.visible = false;
+    }
+
+    if (leftMouseDown && currentHit && !currentMobHit && player.isLocked && !gameUI.isOpen && !survival.dead) {
+      const sameTarget = miningTarget && miningTarget.x === currentHit.x && miningTarget.y === currentHit.y && miningTarget.z === currentHit.z;
+      if (!sameTarget) {
+        miningTarget = { x: currentHit.x, y: currentHit.y, z: currentHit.z };
+        miningProgress = 0;
+      }
+      const blockId = chunkManager.getBlock(currentHit.x, currentHit.y, currentHit.z);
+      const blockDef = getBlockDef(blockId);
+      const heldId = gameUI.selectedItemId;
+      const heldItemDef = heldId ? getItemDef(heldId) : null;
+      const required = miningSeconds(blockDef, heldItemDef);
+      if (required === Infinity) {
+        miningProgress = 0;
+        miningBarOuter.style.display = 'none';
+      } else {
+        miningProgress += dt;
+        miningBarOuter.style.display = 'block';
+        miningBarFill.style.width = `${Math.min(100, (miningProgress / Math.max(required, 0.0001)) * 100)}%`;
+        if (miningProgress >= required) {
+          breakBlock(currentHit.x, currentHit.y, currentHit.z);
+          miningProgress = 0;
+          miningTarget = null;
+          miningBarOuter.style.display = 'none';
+        }
+      }
+    } else if (miningProgress > 0 || miningTarget) {
+      miningProgress = 0;
+      miningTarget = null;
+      miningBarOuter.style.display = 'none';
     }
 
     hud.textContent = `${opts.worldName} | seed: ${opts.seed} | chunks: ${chunkManager.getReadyChunkCount()}/${chunkManager.getLoadedChunkCount()} | pos: ${player.position.x.toFixed(1)}, ${player.position.y.toFixed(1)}, ${player.position.z.toFixed(1)} | ${player.flying ? 'flying' : player.grounded ? 'grounded' : 'air'} | mobs: ${mobManager.getMobs().length} | ${sky.isNight ? 'night' : 'day'}`;
