@@ -2,7 +2,17 @@ import * as THREE from 'three';
 
 export const TILE_SIZE = 16;
 export const ATLAS_TILES = 16; // 16x16 grid
-export const ATLAS_SIZE = TILE_SIZE * ATLAS_TILES;
+// Each tile's actual 16x16 content sits inside a larger padded cell, with
+// its edge pixels extruded into the padding (see register()). Without this,
+// enabling mipmaps (needed to fix severe aliasing/flicker on these noisy
+// textures at a distance -- busy per-pixel noise + NearestFilter + no
+// mipmaps reads as "static"/holes rather than a solid surface) would blend
+// each tile's lower mip levels with its neighbors' unrelated pixels in the
+// atlas. Padding of 8 (cell size 32, a power of two) keeps that bleed
+// contained to the padding itself even several mip levels down.
+const PADDING = 8;
+const CELL_SIZE = TILE_SIZE + PADDING * 2;
+export const ATLAS_SIZE = CELL_SIZE * ATLAS_TILES;
 
 export type DrawFn = (
   ctx: CanvasRenderingContext2D,
@@ -68,20 +78,38 @@ class TextureAtlasBuilder {
     if (index >= ATLAS_TILES * ATLAS_TILES) throw new Error(`Texture atlas full (key=${key})`);
     const col = index % ATLAS_TILES;
     const row = Math.floor(index / ATLAS_TILES);
-    const px = col * TILE_SIZE;
-    const py = row * TILE_SIZE;
+    const px = col * CELL_SIZE + PADDING;
+    const py = row * CELL_SIZE + PADDING;
     draw(this.ctx, px, py, TILE_SIZE, mulberry32(hashString(key)));
+    this.extrudeEdges(this.ctx, px, py);
     if (emissiveDraw) {
       emissiveDraw(this.emissiveCtx, px, py, TILE_SIZE, mulberry32(hashString(key + ':em')));
+      this.extrudeEdges(this.emissiveCtx, px, py);
     }
-    const pad = 0; // no padding needed: NearestFilter + no mipmaps avoids bleeding
-    const u0 = (px + pad) / ATLAS_SIZE;
-    const v0 = (py + pad) / ATLAS_SIZE;
-    const u1 = (px + TILE_SIZE - pad) / ATLAS_SIZE;
-    const v1 = (py + TILE_SIZE - pad) / ATLAS_SIZE;
+    const u0 = px / ATLAS_SIZE;
+    const v0 = py / ATLAS_SIZE;
+    const u1 = (px + TILE_SIZE) / ATLAS_SIZE;
+    const v1 = (py + TILE_SIZE) / ATLAS_SIZE;
     const rect: TileRect = { u0, v0, u1, v1, index };
     this.tiles.set(key, rect);
     return rect;
+  }
+
+  /** Repeats a tile's own edge pixels outward into its padding border, so
+   * mipmap generation never blends in a neighboring tile's unrelated
+   * content (see the ATLAS_SIZE comment above). */
+  private extrudeEdges(ctx: CanvasRenderingContext2D, px: number, py: number) {
+    const last = TILE_SIZE - 1;
+    for (let p = 1; p <= PADDING; p++) {
+      ctx.drawImage(ctx.canvas, px, py, TILE_SIZE, 1, px, py - p, TILE_SIZE, 1); // top
+      ctx.drawImage(ctx.canvas, px, py + last, TILE_SIZE, 1, px, py + last + p, TILE_SIZE, 1); // bottom
+      ctx.drawImage(ctx.canvas, px, py, 1, TILE_SIZE, px - p, py, 1, TILE_SIZE); // left
+      ctx.drawImage(ctx.canvas, px + last, py, 1, TILE_SIZE, px + last + p, py, 1, TILE_SIZE); // right
+      ctx.drawImage(ctx.canvas, px, py, 1, 1, px - p, py - p, 1, 1); // corners
+      ctx.drawImage(ctx.canvas, px + last, py, 1, 1, px + last + p, py - p, 1, 1);
+      ctx.drawImage(ctx.canvas, px, py + last, 1, 1, px - p, py + last + p, 1, 1);
+      ctx.drawImage(ctx.canvas, px + last, py + last, 1, 1, px + last + p, py + last + p, 1, 1);
+    }
   }
 
   private toDataTexture(canvas: HTMLCanvasElement, srgb: boolean): THREE.DataTexture {
@@ -93,9 +121,13 @@ class TextureAtlasBuilder {
     const ctx = canvas.getContext('2d')!;
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const tex = new THREE.DataTexture(imageData.data, canvas.width, canvas.height, THREE.RGBAFormat, THREE.UnsignedByteType);
+    // NearestFilter keeps the pixel-art look crisp up close; mipmapping
+    // (safe now that register() pads+extrudes every tile, see ATLAS_SIZE)
+    // is what actually fixes the aliasing/flicker these busy noise textures
+    // showed at a distance without it.
     tex.magFilter = THREE.NearestFilter;
-    tex.minFilter = THREE.NearestFilter;
-    tex.generateMipmaps = false;
+    tex.minFilter = THREE.NearestMipmapLinearFilter;
+    tex.generateMipmaps = true;
     tex.wrapS = THREE.ClampToEdgeWrapping;
     tex.wrapT = THREE.ClampToEdgeWrapping;
     // Our u0/v0/v1 tile-rect math (register()) assumes a direct top-row=0

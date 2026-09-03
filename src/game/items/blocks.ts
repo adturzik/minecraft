@@ -64,7 +64,7 @@ const T = {
   spruce_leaves: atlasBuilder.register('spruce_leaves', speckled([40, 80, 50], [25, 60, 35], 0.35)),
   spruce_planks: atlasBuilder.register('spruce_planks', grain([120, 85, 55], [95, 65, 40])),
   sapling: atlasBuilder.register('sapling', (ctx, px, py, size, rng) => {
-    speckled([100, 150, 200], [80, 130, 180], 0.08)(ctx, px, py, size, rng);
+    speckled([95, 159, 53], [80, 140, 45], 0.12)(ctx, px, py, size, rng);
     ctx.fillStyle = '#6b4a28';
     ctx.fillRect(px + size / 2 - 1, py + size - 5, 2, 5);
     ctx.fillStyle = '#3f8f2a';
@@ -77,7 +77,7 @@ const T = {
     ctx.fill();
   }),
   tall_grass: atlasBuilder.register('tall_grass', (ctx, px, py, size, rng) => {
-    speckled([100, 150, 200], [80, 130, 180], 0.08)(ctx, px, py, size, rng);
+    speckled([95, 159, 53], [80, 140, 45], 0.12)(ctx, px, py, size, rng);
     for (let i = 0; i < 6; i++) {
       const x = px + 1 + i * 2.5 + (rng() - 0.5);
       const h = 6 + rng() * 7;
@@ -91,7 +91,7 @@ const T = {
     }
   }),
   flower_red: atlasBuilder.register('flower_red', (ctx, px, py, size, rng) => {
-    speckled([100, 150, 200], [80, 130, 180], 0.08)(ctx, px, py, size, rng);
+    speckled([95, 159, 53], [80, 140, 45], 0.12)(ctx, px, py, size, rng);
     ctx.fillStyle = '#3f8f2a';
     ctx.fillRect(px + size / 2, py + size / 2, 1, size / 2 - 1);
     const cx = px + size / 2, cy = py + size / 2 - 2;
@@ -101,7 +101,7 @@ const T = {
     ctx.fillRect(cx - 1, cy - 1, 2, 2);
   }),
   flower_yellow: atlasBuilder.register('flower_yellow', (ctx, px, py, size, rng) => {
-    speckled([100, 150, 200], [80, 130, 180], 0.08)(ctx, px, py, size, rng);
+    speckled([95, 159, 53], [80, 140, 45], 0.12)(ctx, px, py, size, rng);
     ctx.fillStyle = '#3f8f2a';
     ctx.fillRect(px + size / 2, py + size / 2, 1, size / 2 - 1);
     const cx = px + size / 2, cy = py + size / 2 - 2;
@@ -113,7 +113,7 @@ const T = {
   cactus_side: atlasBuilder.register('cactus_side', speckled([60, 110, 50], [40, 90, 35], 0.1)),
   cactus_top: atlasBuilder.register('cactus_top', solid([70, 120, 55], 10)),
   mushroom: atlasBuilder.register('mushroom', (ctx, px, py, size, rng) => {
-    speckled([100, 150, 200], [80, 130, 180], 0.08)(ctx, px, py, size, rng);
+    speckled([134, 96, 67], [110, 78, 52], 0.1)(ctx, px, py, size, rng);
     ctx.fillStyle = '#e8ddc8';
     ctx.fillRect(px + size / 2 - 1, py + size / 2 + 1, 2, size / 2 - 2);
     ctx.fillStyle = '#c04030';
@@ -143,7 +143,7 @@ const T = {
   torch: atlasBuilder.register(
     'torch',
     (ctx, px, py, size, rng) => {
-      speckled([100, 150, 200], [80, 130, 180], 0.08)(ctx, px, py, size, rng);
+      speckled([90, 80, 70], [70, 62, 55], 0.1)(ctx, px, py, size, rng);
       ctx.fillStyle = '#5a3a1e';
       ctx.fillRect(px + size / 2 - 1, py + size / 2, 2, size / 2 - 1);
       ctx.fillStyle = '#e89020';
@@ -184,7 +184,7 @@ const T = {
     ctx.fillRect(px + size / 2 - 1, py + size / 2 - 2, 2, 4);
   }),
   ladder: atlasBuilder.register('ladder', (ctx, px, py, size, rng) => {
-    speckled([100, 150, 200], [80, 130, 180], 0.08)(ctx, px, py, size, rng);
+    speckled([120, 90, 55], [100, 74, 44], 0.1)(ctx, px, py, size, rng);
     ctx.fillStyle = '#8a6a3f';
     ctx.fillRect(px + 1, py, 2, size);
     ctx.fillRect(px + size - 3, py, 2, size);

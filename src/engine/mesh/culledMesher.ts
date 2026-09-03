@@ -33,10 +33,13 @@ export type Getter = (x: number, y: number, z: number) => number;
 /** 0..15 combined sky+block light at a cell (see lightPropagation.ts). */
 export type LightGetter = (x: number, y: number, z: number) => number;
 
-// Never fully pure black: at 0.04 unlit faces were indistinguishable from
-// the void behind them (read as "transparent holes" rather than dark rock).
-// 0.18 keeps caves properly dark/moody but still legible as solid geometry.
-const MIN_LIGHT_FACTOR = 0.18;
+// Never fully pure black: at 0.04-0.18 unlit faces were still barely
+// distinguishable from the void behind them (read as "transparent holes"
+// rather than dark rock -- confirmed by screenshotting an enclosed unlit
+// room, where the near wall all but disappeared into the background). 0.4
+// keeps caves clearly darker than lit terrain while staying legible as
+// solid geometry against the sky/fog/void.
+const MIN_LIGHT_FACTOR = 0.4;
 
 /** Minimal per-block info the mesher needs. Both main thread (blocks.ts,
  * with real texture tiles) and the mesh worker (blockDefs.ts meta + a
