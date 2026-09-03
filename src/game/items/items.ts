@@ -208,9 +208,15 @@ export function getItemDef(id: string): ItemDef {
   return def;
 }
 
-/** What a broken block yields as an item id (falls back to its own block key). */
+const LEAF_BLOCKS = new Set([BlockId.OakLeaves, BlockId.BirchLeaves, BlockId.SpruceLeaves]);
+
+/** What a broken block yields as an item id (falls back to its own block key).
+ * Leaves get a small extra chance at an apple on top of their usual sapling
+ * drop -- otherwise nothing in the game ever produces one, which left
+ * golden_apple permanently uncraftable. */
 export function blockDropItemId(blockId: number): string | null {
   if (blockId === BlockId.Air) return null;
+  if (LEAF_BLOCKS.has(blockId) && Math.random() < 0.08) return 'apple';
   const raw = getRawBlockDef(blockId);
   return raw.drop ?? raw.key;
 }

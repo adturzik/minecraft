@@ -5,6 +5,7 @@ import { PlayerController } from './game/player/playerController';
 import { BlockId, tierIndex, ToolTier } from './game/items/blockDefs';
 import { getBlockDef } from './game/items/blocks';
 import { blockDropItemId, getItemDef, miningSeconds } from './game/items/items';
+import { CrackOverlay } from './engine/mesh/crackOverlay';
 import { GameUI } from './ui/gameUI';
 import { FurnaceManager } from './game/crafting/furnaceManager';
 import { SurvivalState } from './game/player/survival';
@@ -176,6 +177,9 @@ function startGame(opts: PlayOptions) {
   miningBarOuter.appendChild(miningBarFill);
   document.body.appendChild(miningBarOuter);
 
+  const crackOverlay = new CrackOverlay();
+  scene.add(crackOverlay.mesh);
+
   let leftMouseDown = false;
   let miningTarget: { x: number; y: number; z: number } | null = null;
   let miningProgress = 0;
@@ -185,6 +189,7 @@ function startGame(opts: PlayOptions) {
     miningTarget = null;
     miningProgress = 0;
     miningBarOuter.style.display = 'none';
+    crackOverlay.hide();
   }
 
   /** Breaks the block at (x,y,z): removes it, plays the sound, drops the
@@ -534,21 +539,26 @@ function startGame(opts: PlayOptions) {
       if (required === Infinity) {
         miningProgress = 0;
         miningBarOuter.style.display = 'none';
+        crackOverlay.hide();
       } else {
         miningProgress += dt;
         miningBarOuter.style.display = 'block';
-        miningBarFill.style.width = `${Math.min(100, (miningProgress / Math.max(required, 0.0001)) * 100)}%`;
+        const fraction = Math.min(1, miningProgress / Math.max(required, 0.0001));
+        miningBarFill.style.width = `${fraction * 100}%`;
+        crackOverlay.update(currentHit.x, currentHit.y, currentHit.z, fraction);
         if (miningProgress >= required) {
           breakBlock(currentHit.x, currentHit.y, currentHit.z);
           miningProgress = 0;
           miningTarget = null;
           miningBarOuter.style.display = 'none';
+          crackOverlay.hide();
         }
       }
     } else if (miningProgress > 0 || miningTarget) {
       miningProgress = 0;
       miningTarget = null;
       miningBarOuter.style.display = 'none';
+      crackOverlay.hide();
     }
 
     hud.textContent = `${opts.worldName} | seed: ${opts.seed} | chunks: ${chunkManager.getReadyChunkCount()}/${chunkManager.getLoadedChunkCount()} | pos: ${player.position.x.toFixed(1)}, ${player.position.y.toFixed(1)}, ${player.position.z.toFixed(1)} | ${player.flying ? 'flying' : player.grounded ? 'grounded' : 'air'} | mobs: ${mobManager.getMobs().length} | ${sky.isNight ? 'night' : 'day'}`;
