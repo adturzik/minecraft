@@ -60,11 +60,23 @@ interface FaceSpec {
   dir: [number, number, number];
   corners: [number, number, number][];
   which: 'top' | 'bottom' | 'side';
+  flipWinding?: boolean;
 }
 
 const FACES: FaceSpec[] = [
-  { dir: [1, 0, 0], corners: [[1, 0, 0], [1, 0, 1], [1, 1, 1], [1, 1, 0]], which: 'side' },
-  { dir: [-1, 0, 0], corners: [[0, 0, 1], [0, 0, 0], [0, 1, 0], [0, 1, 1]], which: 'side' },
+  // flipWinding faces (+X/-X) have a corner order whose forward triangle
+  // winding (cross(corners[1]-corners[0], corners[2]-corners[0])) points
+  // opposite to `dir` -- the other 4 faces' windings already match. With
+  // the opaque material's default `side: FrontSide`, that made every
+  // east/west block face a back face and get culled outright, i.e. every
+  // single cube in the game rendered "see-through" on exactly those two
+  // sides. Reversing the corner array would fix the winding but also
+  // silently flips which UV corner lands where (faceUVs assigns UVs by
+  // position in this array, not by content), turning the texture upside
+  // down instead -- so the winding is flipped in the triangle indices
+  // below (buildChunkMesh) instead, leaving these corners/UVs untouched.
+  { dir: [1, 0, 0], corners: [[1, 0, 0], [1, 0, 1], [1, 1, 1], [1, 1, 0]], which: 'side', flipWinding: true },
+  { dir: [-1, 0, 0], corners: [[0, 0, 1], [0, 0, 0], [0, 1, 0], [0, 1, 1]], which: 'side', flipWinding: true },
   { dir: [0, 1, 0], corners: [[0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0]], which: 'top' },
   { dir: [0, -1, 0], corners: [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]], which: 'bottom' },
   { dir: [0, 0, 1], corners: [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]], which: 'side' },
@@ -156,14 +168,25 @@ export function buildChunkMesh(
           for (const uv of faceUVs(info, face.which)) {
             target.uvs.push(uv[0], uv[1]);
           }
-          target.indices.push(
-            startIndex,
-            startIndex + 1,
-            startIndex + 2,
-            startIndex,
-            startIndex + 2,
-            startIndex + 3
-          );
+          if (face.flipWinding) {
+            target.indices.push(
+              startIndex,
+              startIndex + 3,
+              startIndex + 2,
+              startIndex,
+              startIndex + 2,
+              startIndex + 1
+            );
+          } else {
+            target.indices.push(
+              startIndex,
+              startIndex + 1,
+              startIndex + 2,
+              startIndex,
+              startIndex + 2,
+              startIndex + 3
+            );
+          }
         }
       }
     }
