@@ -14,6 +14,12 @@ export abstract class Entity {
   readonly mesh: THREE.Group;
   dead = false;
   private invulnTimer = 0;
+  /** While > 0, AI movement (Mob.moveToward) must not overwrite
+   * velocity.x/z, so the knockback pushed into velocity by takeDamage
+   * actually plays out instead of being stomped the very next tick. */
+  protected knockbackTimer = 0;
+  private hitFlashTimer = 0;
+  private preFlashColors: THREE.Color[] | null = null;
 
   constructor(size: PlayerAABB, maxHealth: number, mesh: THREE.Group) {
     this.size = size;
@@ -26,7 +32,11 @@ export abstract class Entity {
     if (this.dead || this.invulnTimer > 0) return false;
     this.health -= amount;
     this.invulnTimer = 0.5;
-    if (knockback) this.velocity.add(knockback);
+    this.hitFlashTimer = 0.15;
+    if (knockback) {
+      this.velocity.add(knockback);
+      this.knockbackTimer = 0.3;
+    }
     if (this.health <= 0) {
       this.health = 0;
       this.dead = true;
@@ -34,11 +44,37 @@ export abstract class Entity {
     return true;
   }
 
+  private updateHitFlash(dt: number) {
+    if (this.hitFlashTimer <= 0) return;
+    if (!this.preFlashColors) {
+      this.preFlashColors = [];
+      this.mesh.traverse((obj) => {
+        if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshBasicMaterial) {
+          this.preFlashColors!.push(obj.material.color.clone());
+          obj.material.color.set(0xff3333);
+        }
+      });
+    }
+    this.hitFlashTimer -= dt;
+    if (this.hitFlashTimer <= 0) {
+      const colors = this.preFlashColors;
+      this.preFlashColors = null;
+      let i = 0;
+      this.mesh.traverse((obj) => {
+        if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshBasicMaterial) {
+          obj.material.color.copy(colors![i++]);
+        }
+      });
+    }
+  }
+
   /** Applies gravity + AABB collision (shared with the player) and syncs
    * the visual mesh transform. Subclasses call this after setting
    * velocity.x/z from their own AI each tick. */
   protected applyPhysics(dt: number, isSolid: SolidTest) {
     if (this.invulnTimer > 0) this.invulnTimer -= dt;
+    if (this.knockbackTimer > 0) this.knockbackTimer -= dt;
+    this.updateHitFlash(dt);
     this.velocity.y += GRAVITY * dt;
     const result = stepPhysics(
       this.position.x,

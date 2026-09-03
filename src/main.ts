@@ -6,6 +6,7 @@ import { BlockId, tierIndex, ToolTier } from './game/items/blockDefs';
 import { getBlockDef } from './game/items/blocks';
 import { blockDropItemId, getItemDef, miningSeconds } from './game/items/items';
 import { CrackOverlay } from './engine/mesh/crackOverlay';
+import { HeldItemView } from './engine/mesh/heldItemView';
 import { GameUI } from './ui/gameUI';
 import { FurnaceManager } from './game/crafting/furnaceManager';
 import { SurvivalState } from './game/player/survival';
@@ -52,6 +53,10 @@ function startGame(opts: PlayOptions) {
 
   const camera = new THREE.PerspectiveCamera(settings.fov, window.innerWidth / window.innerHeight, 0.1, 800);
   camera.rotation.order = 'YXZ';
+  scene.add(camera); // required for objects parented to the camera (heldItemView) to render at all
+
+  const heldItemView = new HeldItemView();
+  camera.add(heldItemView.mesh);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -430,6 +435,8 @@ function startGame(opts: PlayOptions) {
     const now = performance.now();
     const dt = Math.min((now - lastTime) / 1000, 0.1);
     lastTime = now;
+
+    heldItemView.setItem(gameUI.isOpen || survival.dead ? null : gameUI.selectedItemId);
 
     if (!loadingDone) {
       const ready = chunkManager.getReadyChunkCount();
