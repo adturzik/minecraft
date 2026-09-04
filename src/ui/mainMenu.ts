@@ -2,12 +2,14 @@ import { listWorlds, loadWorld, deleteWorld, newWorldId, WorldSummary, WorldSave
 import { loadSettings, saveSettings, Settings } from '../persistence/settings';
 import { seedFromString } from '../engine/worldgen/random';
 import { soundEngine } from '../audio/soundEngine';
-import { panelStyle, buttonStyle, inputStyle, attachButtonHover, TITLE_FONT, BODY_FONT, logoTextShadow } from './pixelStyle';
+import { panelStyle, buttonStyle, inputStyle, attachButtonHover, TITLE_FONT, BODY_FONT, logoTextShadow, STONE, bevel } from './pixelStyle';
+import type { GameMode } from '../game/player/gameMode';
 
 export interface PlayOptions {
   seed: number;
   worldId: string;
   worldName: string;
+  gameMode: GameMode;
   existingSave: WorldSaveData | null;
 }
 
@@ -176,12 +178,45 @@ export class MainMenu {
     const seedInput = styledInput('Seed (nepovinné)');
     panel.appendChild(seedInput);
 
+    let gameMode: GameMode = 'survival';
+    const modeLabel = document.createElement('div');
+    modeLabel.textContent = 'Herní režim';
+    modeLabel.style.cssText = `font-family:${BODY_FONT};font-size:12px;color:#333;align-self:flex-start;margin-top:2px;`;
+    panel.appendChild(modeLabel);
+
+    const modeRow = document.createElement('div');
+    modeRow.style.cssText = 'display:flex;gap:6px;width:280px;';
+    const modeBtn = (mode: GameMode, label: string, desc: string): HTMLButtonElement => {
+      const b = document.createElement('button');
+      b.style.cssText = `flex:1;background:${STONE};${bevel('raised', 2)}box-shadow:0 0 0 2px #000;color:#fff;font-family:${BODY_FONT};font-size:11px;padding:8px 4px;cursor:pointer;text-align:center;box-sizing:border-box;`;
+      b.innerHTML = `<div style="font-weight:bold;">${label}</div><div style="opacity:0.8;font-size:9px;margin-top:2px;">${desc}</div>`;
+      const applySelected = () => {
+        b.style.filter = gameMode === mode ? 'brightness(1.3)' : 'none';
+        b.style.boxShadow = gameMode === mode ? '0 0 0 2px #000, 0 0 0 4px #ffcf4a' : '0 0 0 2px #000';
+      };
+      b.addEventListener('click', () => {
+        gameMode = mode;
+        soundEngine.uiClick();
+        modeRow.querySelectorAll('button').forEach((el) => el.dispatchEvent(new Event('refresh')));
+      });
+      b.addEventListener('refresh', applySelected);
+      applySelected();
+      return b;
+    };
+    const survivalBtn = modeBtn('survival', 'Přežití', 'zdraví, hlad, těžba časem');
+    const creativeBtn = modeBtn('creative', 'Kreativní', 'vše k dispozici, nezranitelný');
+    modeRow.append(survivalBtn, creativeBtn);
+    panel.appendChild(modeRow);
+    // clicking one has to refresh both (to un-highlight the other)
+    survivalBtn.addEventListener('click', () => creativeBtn.dispatchEvent(new Event('refresh')));
+    creativeBtn.addEventListener('click', () => survivalBtn.dispatchEvent(new Event('refresh')));
+
     panel.appendChild(
       btn('Vytvořit svět', () => {
         const seedText = seedInput.value.trim();
         const seed = seedText ? seedFromString(seedText) : Math.floor(Math.random() * 1e9);
         this.hide();
-        this.onPlay({ seed, worldId: newWorldId(), worldName: nameInput.value.trim() || 'Nový svět', existingSave: null });
+        this.onPlay({ seed, worldId: newWorldId(), worldName: nameInput.value.trim() || 'Nový svět', gameMode, existingSave: null });
       })
     );
     panel.appendChild(btn('Zpět', () => this.showHome(), 'small'));
@@ -214,12 +249,13 @@ export class MainMenu {
       row.style.cssText = 'display:flex;gap:6px;align-items:center;background:rgba(0,0,0,0.15);padding:6px 8px;';
       const label = document.createElement('div');
       label.style.cssText = `flex:1;font-family:${BODY_FONT};color:#fff;`;
-      label.innerHTML = `<div style="font-weight:bold;">${w.name}</div><div style="font-size:11px;opacity:0.8;">seed ${w.seed} · ${new Date(w.lastPlayedAt).toLocaleString()}</div>`;
+      const modeLabel = w.gameMode === 'creative' ? 'Kreativní' : 'Přežití';
+      label.innerHTML = `<div style="font-weight:bold;">${w.name}</div><div style="font-size:11px;opacity:0.8;">seed ${w.seed} · ${modeLabel} · ${new Date(w.lastPlayedAt).toLocaleString()}</div>`;
       row.appendChild(label);
       const playBtn = btn('Hrát', async () => {
         const save = await loadWorld(w.id);
         this.hide();
-        this.onPlay({ seed: w.seed, worldId: w.id, worldName: w.name, existingSave: save });
+        this.onPlay({ seed: w.seed, worldId: w.id, worldName: w.name, gameMode: w.gameMode, existingSave: save });
       }, 'small');
       row.appendChild(playBtn);
       const delBtn = btn('Smazat', async () => {

@@ -1,5 +1,6 @@
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
 import type { Slot } from '../game/player/inventory';
+import type { GameMode } from '../game/player/gameMode';
 
 export interface PlayerSaveData {
   x: number;
@@ -19,6 +20,9 @@ export interface WorldSaveData {
   createdAt: number;
   lastPlayedAt: number;
   gameTimeElapsed: number;
+  /** Missing on saves from before creative mode existed -- callers should
+   * fall back to 'survival' when reading this from an older save. */
+  gameMode?: GameMode;
   player: PlayerSaveData;
   inventorySlots: Slot[];
   /** Sparse diff of every block the player has changed vs. the freshly
@@ -53,13 +57,14 @@ export interface WorldSummary {
   name: string;
   seed: number;
   lastPlayedAt: number;
+  gameMode: GameMode;
 }
 
 export async function listWorlds(): Promise<WorldSummary[]> {
   const db = await getDB();
   const all = await db.getAll('worlds');
   return all
-    .map((w) => ({ id: w.id, name: w.name, seed: w.seed, lastPlayedAt: w.lastPlayedAt }))
+    .map((w) => ({ id: w.id, name: w.name, seed: w.seed, lastPlayedAt: w.lastPlayedAt, gameMode: w.gameMode ?? 'survival' }))
     .sort((a, b) => b.lastPlayedAt - a.lastPlayedAt);
 }
 
