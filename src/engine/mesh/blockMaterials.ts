@@ -25,10 +25,17 @@ function addSwayShader(material: THREE.MeshLambertMaterial) {
       .replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
+        // World position, not local/object-space -- each chunk is its own
+        // mesh with its own local origin, so phasing this off transformed.xz
+        // (local coords, which reset to ~0 at the start of every chunk)
+        // made the wave/wind phase jump discontinuously at every chunk
+        // boundary: a visible crack running through any wide water body or
+        // grass patch that spans more than one chunk.
+        vec3 swayWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
         if (sway > 1.5) {
-          transformed.y += sin(uTime * 1.6 + transformed.x * 0.6 + transformed.z * 0.6) * 0.045;
+          transformed.y += sin(uTime * 1.6 + swayWorldPos.x * 0.6 + swayWorldPos.z * 0.6) * 0.045;
         } else if (sway > 0.5) {
-          float windPhase = sin(uTime * 1.8 + transformed.x * 1.3 + transformed.z * 1.3);
+          float windPhase = sin(uTime * 1.8 + swayWorldPos.x * 1.3 + swayWorldPos.z * 1.3);
           transformed.x += windPhase * 0.09;
           transformed.z += windPhase * 0.05;
         }`

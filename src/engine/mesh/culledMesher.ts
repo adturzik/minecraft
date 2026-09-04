@@ -45,7 +45,7 @@ export type LightGetter = (x: number, y: number, z: number) => number;
 // room, where the near wall all but disappeared into the background). 0.4
 // keeps caves clearly darker than lit terrain while staying legible as
 // solid geometry against the sky/fog/void.
-const MIN_LIGHT_FACTOR = 0.4;
+const MIN_LIGHT_FACTOR = 0.58;
 
 /** Minimal per-block info the mesher needs. Both main thread (blocks.ts,
  * with real texture tiles) and the mesh worker (blockDefs.ts meta + a
@@ -109,7 +109,7 @@ const CROSS_CORNERS: [number, number, number][][] = [
  * the layer the face opens into -- two edge-adjacent cells plus the diagonal
  * between them. Gives Minecraft's "smooth lighting" corner-darkening look
  * (concave corners read as recessed) instead of every vertex on a face
- * sharing one flat baked shade. Returns 0.55 (fully occluded) .. 1.0 (open),
+ * sharing one flat baked shade. Returns 0.68 (fully occluded) .. 1.0 (open),
  * floored so corners never crush to pure black on top of the light/shade
  * multipliers already applied. */
 function computeVertexAO(
@@ -142,7 +142,7 @@ function computeVertexAO(
   const s1 = isOpaqueAt(sideA[0], sideA[1], sideA[2]);
   const s2 = isOpaqueAt(sideB[0], sideB[1], sideB[2]);
   const ao = s1 && s2 ? 0 : 3 - (s1 ? 1 : 0) - (s2 ? 1 : 0) - (isOpaqueAt(cornerCell[0], cornerCell[1], cornerCell[2]) ? 1 : 0);
-  return 0.55 + 0.15 * ao;
+  return 0.68 + 0.32 * (ao / 3);
 }
 
 export function buildChunkMesh(

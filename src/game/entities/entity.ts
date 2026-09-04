@@ -3,6 +3,19 @@ import { stepPhysics, PlayerAABB, SolidTest } from '../../engine/physics/voxelPh
 
 const GRAVITY = -28;
 
+// GLB mob models (see engine/assets/models.ts) use MeshStandardMaterial,
+// not the MeshLambertMaterial the old procedural mob meshes used -- the
+// hit-flash effect below needs to recognize both, or it silently stops
+// working for every mob that has a real model.
+type ColorMaterial = THREE.MeshLambertMaterial | THREE.MeshStandardMaterial | THREE.MeshBasicMaterial;
+function isColorMaterial(material: THREE.Material): material is ColorMaterial {
+  return (
+    material instanceof THREE.MeshLambertMaterial ||
+    material instanceof THREE.MeshStandardMaterial ||
+    material instanceof THREE.MeshBasicMaterial
+  );
+}
+
 export abstract class Entity {
   position = new THREE.Vector3();
   velocity = new THREE.Vector3();
@@ -49,7 +62,7 @@ export abstract class Entity {
     if (!this.preFlashColors) {
       this.preFlashColors = [];
       this.mesh.traverse((obj) => {
-        if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshLambertMaterial) {
+        if (obj instanceof THREE.Mesh && isColorMaterial(obj.material)) {
           this.preFlashColors!.push(obj.material.color.clone());
           obj.material.color.set(0xff3333);
         }
@@ -61,7 +74,7 @@ export abstract class Entity {
       this.preFlashColors = null;
       let i = 0;
       this.mesh.traverse((obj) => {
-        if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshLambertMaterial) {
+        if (obj instanceof THREE.Mesh && isColorMaterial(obj.material)) {
           obj.material.color.copy(colors![i++]);
         }
       });
