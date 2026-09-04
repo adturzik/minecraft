@@ -58,8 +58,8 @@ export class ChunkManager {
     type: string;
     cx: number;
     cz: number;
-    opaque: { positions: Float32Array; normals: Float32Array; uvs: Float32Array; colors: Float32Array; indices: Uint32Array };
-    transparent: { positions: Float32Array; normals: Float32Array; uvs: Float32Array; colors: Float32Array; indices: Uint32Array };
+    opaque: { positions: Float32Array; normals: Float32Array; uvs: Float32Array; colors: Float32Array; indices: Uint32Array; sway: Float32Array };
+    transparent: { positions: Float32Array; normals: Float32Array; uvs: Float32Array; colors: Float32Array; indices: Uint32Array; sway: Float32Array };
     blocks: Uint16Array;
     light: Uint8Array;
   }) {

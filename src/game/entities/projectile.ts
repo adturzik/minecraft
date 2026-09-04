@@ -30,7 +30,7 @@ export class Arrow {
     this.position = origin.clone();
     this.velocity = direction.clone().normalize().multiplyScalar(SPEED);
     const geo = new THREE.BoxGeometry(0.07, 0.07, 0.5);
-    const mat = new THREE.MeshBasicMaterial({ color: 0x8a6a3a });
+    const mat = new THREE.MeshLambertMaterial({ color: 0x8a6a3a });
     this.mesh = new THREE.Mesh(geo, mat);
     this.mesh.position.copy(this.position);
   }

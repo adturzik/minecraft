@@ -49,7 +49,7 @@ export abstract class Entity {
     if (!this.preFlashColors) {
       this.preFlashColors = [];
       this.mesh.traverse((obj) => {
-        if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshBasicMaterial) {
+        if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshLambertMaterial) {
           this.preFlashColors!.push(obj.material.color.clone());
           obj.material.color.set(0xff3333);
         }
@@ -61,7 +61,7 @@ export abstract class Entity {
       this.preFlashColors = null;
       let i = 0;
       this.mesh.traverse((obj) => {
-        if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshBasicMaterial) {
+        if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshLambertMaterial) {
           obj.material.color.copy(colors![i++]);
         }
       });

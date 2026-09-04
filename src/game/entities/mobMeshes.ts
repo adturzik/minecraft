@@ -7,7 +7,7 @@ import * as THREE from 'three';
 // voxel-blocky spirit.
 
 function box(w: number, h: number, d: number, color: number): THREE.Mesh {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshBasicMaterial({ color }));
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshLambertMaterial({ color }));
   return mesh;
 }
 

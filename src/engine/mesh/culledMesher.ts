@@ -7,10 +7,16 @@ export interface MeshBuffers {
   uvs: number[];
   colors: number[];
   indices: number[];
+  /** Per-vertex animation hint consumed by the transparent material's custom
+   * vertex shader (see blockMaterials.ts): 0 = static, 1 = cross-plant top
+   * vertex (wind sway), 2 = liquid top-surface vertex (gentle wave). Always
+   * populated 1:1 with positions, including for the opaque bucket (which is
+   * always 0 there) so buffersToGeometry can set it unconditionally. */
+  sway: number[];
 }
 
 function emptyBuffers(): MeshBuffers {
-  return { positions: [], normals: [], uvs: [], colors: [], indices: [] };
+  return { positions: [], normals: [], uvs: [], colors: [], indices: [], sway: [] };
 }
 
 // Classic blocky baked face shading (Minecraft-style: top brightest, bottom
@@ -125,6 +131,7 @@ export function buildChunkMesh(
               target.positions.push(x + corner[0], y + corner[1], z + corner[2]);
               target.normals.push(0, 1, 0);
               target.colors.push(0.85 * ownLight, 0.85 * ownLight, 0.85 * ownLight);
+              target.sway.push(corner[1] > 0.5 ? 1 : 0); // only the top of the plant sways, base stays planted
             }
             for (const uv of faceUVs(info, 'side')) target.uvs.push(uv[0], uv[1]);
             target.indices.push(
@@ -160,10 +167,16 @@ export function buildChunkMesh(
           // hold light) -- same rule vanilla Minecraft uses.
           const lightFactor = Math.max(MIN_LIGHT_FACTOR, getLight(nx, ny, nz) / 15);
           const finalShade = shade * lightFactor;
+          // Only a liquid's exposed top surface (not its walls/floor) gets
+          // the wave animation -- the same neighbor-culling above already
+          // means a stacked water/lava column only ever exposes a 'top'
+          // face at its actual surface.
+          const swayValue = info.renderType === 'liquid' && face.which === 'top' ? 2 : 0;
           for (const corner of face.corners) {
             target.positions.push(x + corner[0], y + corner[1], z + corner[2]);
             target.normals.push(face.dir[0], face.dir[1], face.dir[2]);
             target.colors.push(finalShade, finalShade, finalShade);
+            target.sway.push(swayValue);
           }
           for (const uv of faceUVs(info, face.which)) {
             target.uvs.push(uv[0], uv[1]);
