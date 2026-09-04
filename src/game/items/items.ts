@@ -24,7 +24,16 @@ export interface ItemDef {
 }
 
 const TOOL_DURABILITY: Record<ToolTier, number> = { hand: 0, wood: 59, stone: 131, iron: 250, diamond: 1561 };
-const TOOL_DAMAGE: Record<ToolTier, number> = { hand: 1, wood: 4, stone: 5, iron: 6, diamond: 7 };
+// Real vanilla per-tool-type attack damage (Java Edition) -- each tool type
+// scales differently with tier instead of one flat "+2/-2 from a base
+// number" formula, matching actual per-item stats: axes hit hardest but
+// pickaxes/shovels are weak sidearms, and hoes barely count as weapons at
+// any tier.
+const SWORD_DAMAGE: Record<ToolTier, number> = { hand: 1, wood: 4, stone: 5, iron: 6, diamond: 7 };
+const AXE_DAMAGE: Record<ToolTier, number> = { hand: 1, wood: 7, stone: 9, iron: 9, diamond: 9 };
+const PICKAXE_DAMAGE: Record<ToolTier, number> = { hand: 1, wood: 2, stone: 3, iron: 4, diamond: 5 };
+const SHOVEL_DAMAGE: Record<ToolTier, number> = { hand: 1, wood: 2.5, stone: 3.5, iron: 4.5, diamond: 5.5 };
+const HOE_DAMAGE: Record<ToolTier, number> = { hand: 1, wood: 1, stone: 1, iron: 1, diamond: 1 };
 const TOOL_COLOR: Record<ToolTier, [number, number, number]> = {
   hand: [200, 180, 160],
   wood: [176, 143, 92],
@@ -40,7 +49,14 @@ const ARMOR_DEFENSE: Record<ArmorTier, Record<ArmorType, number>> = {
   gold: { helmet: 2, chestplate: 5, leggings: 3, boots: 1 },
   diamond: { helmet: 3, chestplate: 8, leggings: 6, boots: 3 },
 };
-const ARMOR_DURABILITY: Record<ArmorTier, number> = { leather: 55, iron: 165, gold: 77, diamond: 363 };
+// Real vanilla per-piece durability -- chestplates/leggings are notably
+// tougher than a helmet of the same tier, not a single flat value per tier.
+const ARMOR_DURABILITY: Record<ArmorTier, Record<ArmorType, number>> = {
+  leather: { helmet: 55, chestplate: 80, leggings: 75, boots: 65 },
+  iron: { helmet: 165, chestplate: 240, leggings: 225, boots: 195 },
+  gold: { helmet: 77, chestplate: 112, leggings: 105, boots: 91 },
+  diamond: { helmet: 363, chestplate: 528, leggings: 495, boots: 429 },
+};
 const ARMOR_COLOR: Record<ArmorTier, [number, number, number]> = {
   leather: [150, 100, 60],
   iron: [216, 216, 216],
@@ -56,12 +72,20 @@ function armor(tier: ArmorTier, type: ArmorType): ItemDef {
     stackSize: 1,
     color: ARMOR_COLOR[tier],
     armorType: type,
-    maxDurability: ARMOR_DURABILITY[tier],
+    maxDurability: ARMOR_DURABILITY[tier][type],
     defense: ARMOR_DEFENSE[tier][type],
   };
 }
 
-function tool(tier: ToolTier, type: Exclude<ItemToolType, 'none'>): ItemDef {
+const TOOL_DAMAGE_TABLE: Record<'pickaxe' | 'axe' | 'shovel' | 'sword' | 'hoe', Record<ToolTier, number>> = {
+  sword: SWORD_DAMAGE,
+  axe: AXE_DAMAGE,
+  pickaxe: PICKAXE_DAMAGE,
+  shovel: SHOVEL_DAMAGE,
+  hoe: HOE_DAMAGE,
+};
+
+function tool(tier: ToolTier, type: 'pickaxe' | 'axe' | 'shovel' | 'sword' | 'hoe'): ItemDef {
   return {
     id: `${tier}_${type}`,
     name: `${tier[0].toUpperCase()}${tier.slice(1)} ${type[0].toUpperCase()}${type.slice(1)}`,
@@ -70,7 +94,7 @@ function tool(tier: ToolTier, type: Exclude<ItemToolType, 'none'>): ItemDef {
     toolType: type,
     toolTier: tier,
     maxDurability: TOOL_DURABILITY[tier],
-    attackDamage: type === 'sword' ? TOOL_DAMAGE[tier] + 2 : type === 'axe' ? TOOL_DAMAGE[tier] : Math.max(1, TOOL_DAMAGE[tier] - 2),
+    attackDamage: TOOL_DAMAGE_TABLE[type][tier],
   };
 }
 

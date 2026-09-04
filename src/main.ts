@@ -139,8 +139,61 @@ function startGame(opts: PlayOptions) {
     }
   }
 
+  // Simple fluid spread: breaking a block next to standing water/lava lets
+  // it pour into the new opening instead of sitting frozen next to a hole,
+  // like it did before. Not a full vanilla flow-level simulation (no
+  // partial "flowing" visual states) -- just a bounded, gently-paced BFS
+  // seeded from whatever cell just became air, so it reads as the fluid
+  // actually finding its way into new space. Capped both sideways (matches
+  // vanilla water's 7-block max travel) and by a fall-depth limit, so
+  // opening one hole next to an ocean can't drain the whole thing.
+  const FLUID_SPREAD_DELAY = 0.12;
+  const FLUID_SIDE_SPREAD_LIMIT = 7;
+  const FLUID_FALL_LIMIT = 40;
+  interface FluidSpreadJob {
+    x: number;
+    y: number;
+    z: number;
+    fluidId: number;
+    sideDist: number;
+    fallDist: number;
+  }
+  const fluidSpreadQueue: FluidSpreadJob[] = [];
+  let fluidSpreadTimer = 0;
+  function tryFluidSpread(job: FluidSpreadJob) {
+    if (chunkManager.getBlock(job.x, job.y, job.z) !== BlockId.Air) return;
+    chunkManager.setBlock(job.x, job.y, job.z, job.fluidId);
+    if (!chunkManager.isSolid(job.x, job.y - 1, job.z) && job.fallDist < FLUID_FALL_LIMIT) {
+      // Prioritize falling over spreading sideways, like a real waterfall --
+      // only spreads outward once it lands on something solid.
+      fluidSpreadQueue.push({ x: job.x, y: job.y - 1, z: job.z, fluidId: job.fluidId, sideDist: 0, fallDist: job.fallDist + 1 });
+      return;
+    }
+    if (job.sideDist >= FLUID_SIDE_SPREAD_LIMIT) return;
+    const sideDist = job.sideDist + 1;
+    const sideOffsets: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    for (const [dx, dz] of sideOffsets) {
+      fluidSpreadQueue.push({ x: job.x + dx, y: job.y, z: job.z + dz, fluidId: job.fluidId, sideDist, fallDist: 0 });
+    }
+  }
+  /** Call whenever (x,y,z) just became air -- if a fluid source is touching
+   * it, seed a spread starting there. */
+  function scheduleFluidCheck(x: number, y: number, z: number) {
+    const neighbors: [number, number, number][] = [
+      [x + 1, y, z], [x - 1, y, z], [x, y + 1, z], [x, y - 1, z], [x, y, z + 1], [x, y, z - 1],
+    ];
+    for (const [nx, ny, nz] of neighbors) {
+      const nId = chunkManager.getBlock(nx, ny, nz);
+      if (nId === BlockId.Water || nId === BlockId.Lava) {
+        fluidSpreadQueue.push({ x, y, z, fluidId: nId, sideDist: 0, fallDist: 0 });
+        return;
+      }
+    }
+  }
+
   const player = new PlayerController(camera, renderer.domElement);
   player.controls.pointerSpeed = settings.mouseSensitivity;
+  player.flightAllowed = gameMode === 'creative'; // free flight is a creative-only privilege, matching vanilla
   const SPAWN_POSITION = new THREE.Vector3(0.5, 90, 0.5);
 
   const gameUI = new GameUI(gameMode);
@@ -289,6 +342,7 @@ function startGame(opts: PlayOptions) {
     const brokenId = chunkManager.getBlock(x, y, z);
     if (brokenId === BlockId.Air) return;
     chunkManager.setBlock(x, y, z, BlockId.Air);
+    scheduleFluidCheck(x, y, z);
     soundEngine.breakBlock();
     if (brokenId === BlockId.Furnace) furnaceManager.remove(x, y, z);
     if (brokenId === BlockId.Torch) unregisterTorch(x, y, z);
@@ -326,8 +380,9 @@ function startGame(opts: PlayOptions) {
       sub.style.cssText = `cursor:pointer;font-family:${BODY_FONT};font-size:16px;`;
       const hint = document.createElement('div');
       hint.style.cssText = `font-size:12px;opacity:0.85;max-width:420px;font-family:${BODY_FONT};margin-top:6px;`;
+      const flyHint = gameMode === 'creative' ? ' · F létání' : '';
       hint.innerHTML =
-        'WASD pohyb · myš rozhlížení · mezerník skok · Shift crouch · Ctrl sprint · F létání<br/>levé tlačítko těžba/útok · pravé tlačítko pokládání/interakce/jídlo · E inventář · kolečko/1-9 hotbar · Esc pauza';
+        `WASD pohyb · myš rozhlížení · mezerník skok · Shift crouch · Ctrl sprint${flyHint}<br/>levé tlačítko těžba/útok · pravé tlačítko pokládání/interakce/jídlo · E inventář · kolečko/1-9 hotbar · Esc pauza`;
       overlay.append(title, sub, hint);
       overlay.style.cursor = 'pointer';
       overlay.onclick = () => {
@@ -465,6 +520,7 @@ function startGame(opts: PlayOptions) {
           const fluidId = chunkManager.getBlock(fluidHit.x, fluidHit.y, fluidHit.z);
           if (fluidId === BlockId.Water || fluidId === BlockId.Lava) {
             chunkManager.setBlock(fluidHit.x, fluidHit.y, fluidHit.z, BlockId.Air);
+            scheduleFluidCheck(fluidHit.x, fluidHit.y, fluidHit.z);
             consumeSelected();
             gameUI.inventory.addItem(fluidId === BlockId.Water ? 'water_bucket' : 'lava_bucket', 1);
             gameUI.refreshHotbar();
@@ -597,6 +653,13 @@ function startGame(opts: PlayOptions) {
     if (torchRefreshTimer <= 0) {
       torchRefreshTimer = 0.5;
       refreshTorchLights(player.position);
+    }
+
+    fluidSpreadTimer -= dt;
+    if (fluidSpreadTimer <= 0 && fluidSpreadQueue.length > 0) {
+      fluidSpreadTimer = FLUID_SPREAD_DELAY;
+      const batch = fluidSpreadQueue.splice(0, 3);
+      for (const job of batch) tryFluidSpread(job);
     }
 
     if (player.isLocked && !gameUI.isOpen && !survival.dead) {

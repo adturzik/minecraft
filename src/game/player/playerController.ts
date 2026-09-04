@@ -25,6 +25,9 @@ export class PlayerController {
   velocity = new THREE.Vector3();
   grounded = false;
   flying = false;
+  /** Survival sets this false so F does nothing -- free flight is a
+   * creative-only privilege in vanilla too. */
+  flightAllowed = true;
   sprinting = false;
   sneaking = false;
   /** Fall damage (HP) incurred this frame from landing, if any — read and
@@ -49,9 +52,11 @@ export class PlayerController {
     window.addEventListener('keydown', (e) => {
       this.keys.add(e.code);
       if (e.code === 'KeyF' && !this.flyToggleLatch) {
-        this.flying = !this.flying;
-        if (this.flying) this.velocity.y = 0;
         this.flyToggleLatch = true;
+        if (this.flightAllowed) {
+          this.flying = !this.flying;
+          if (this.flying) this.velocity.y = 0;
+        }
       }
     });
     window.addEventListener('keyup', (e) => {
