@@ -24,10 +24,16 @@ function getIconTexture(itemId: string): THREE.Texture {
   return tex;
 }
 
+// Classic FPS hand position: lower-right corner, angled slightly.
+const REST_POSITION = new THREE.Vector3(0.42, -0.32, -0.7);
+const REST_ROTATION = new THREE.Euler(-0.2, -0.5, -0.15);
+const SWING_DURATION = 0.22;
+
 export class HeldItemView {
   readonly mesh: THREE.Group;
   private plane: THREE.Mesh;
   private currentId: string | null = null;
+  private swingTimer = 0;
 
   constructor() {
     this.mesh = new THREE.Group();
@@ -36,9 +42,8 @@ export class HeldItemView {
     this.plane = new THREE.Mesh(geo, mat);
     this.plane.visible = false;
     this.plane.renderOrder = 999;
-    // Classic FPS hand position: lower-right corner, angled slightly.
-    this.plane.position.set(0.42, -0.32, -0.7);
-    this.plane.rotation.set(-0.2, -0.5, -0.15);
+    this.plane.position.copy(REST_POSITION);
+    this.plane.rotation.copy(REST_ROTATION);
     this.mesh.add(this.plane);
   }
 
@@ -53,5 +58,35 @@ export class HeldItemView {
     const mat = this.plane.material as THREE.MeshBasicMaterial;
     mat.map = getIconTexture(itemId);
     mat.needsUpdate = true;
+  }
+
+  /** Triggers (or restarts) a swing -- call on every mining tick/hit so
+   * continuous mining reads as repeated swings, same as vanilla's arm
+   * animation, instead of the hand sitting frozen while blocks crack. */
+  swing() {
+    this.swingTimer = SWING_DURATION;
+  }
+
+  /** Call once per frame regardless of swing state so the hand eases back
+   * to rest after the animation finishes. */
+  update(dt: number) {
+    if (this.swingTimer <= 0) {
+      this.plane.position.copy(REST_POSITION);
+      this.plane.rotation.copy(REST_ROTATION);
+      return;
+    }
+    this.swingTimer = Math.max(0, this.swingTimer - dt);
+    const progress = 1 - this.swingTimer / SWING_DURATION;
+    const arc = Math.sin(progress * Math.PI); // 0 -> 1 -> 0, a down-forward-back swing
+    this.plane.position.set(
+      REST_POSITION.x - arc * 0.1,
+      REST_POSITION.y - arc * 0.08,
+      REST_POSITION.z + arc * 0.1
+    );
+    this.plane.rotation.set(
+      REST_ROTATION.x - arc * 0.6,
+      REST_ROTATION.y + arc * 0.3,
+      REST_ROTATION.z - arc * 0.35
+    );
   }
 }

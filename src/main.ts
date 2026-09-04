@@ -86,6 +86,59 @@ function startGame(opts: PlayOptions) {
   const chunkManager = new ChunkManager(scene, { seed: opts.seed, renderDistance: settings.renderDistance });
   if (opts.existingSave) chunkManager.loadEdits(opts.existingSave.blockEdits);
 
+  // Real per-torch point lights: obviously brightens its immediate area
+  // (the point of the whole complaint that touched this off), on top of the
+  // baked block-light tint that already existed for the mesh's own shading.
+  // Capped to the nearest MAX_ACTIVE_TORCH_LIGHTS, distance-culled
+  // periodically, so a base full of torches doesn't blow up the light
+  // budget -- torches far from the player just fall back to the baked tint.
+  const TORCH_LIGHT_RANGE = 10;
+  const MAX_ACTIVE_TORCH_LIGHTS = 12;
+  const torchPositions = new Map<string, THREE.Vector3>();
+  const activeTorchLights = new Map<string, THREE.PointLight>();
+  const torchKey = (x: number, y: number, z: number) => `${x},${y},${z}`;
+  function registerTorch(x: number, y: number, z: number) {
+    torchPositions.set(torchKey(x, y, z), new THREE.Vector3(x + 0.5, y + 0.6, z + 0.5));
+  }
+  function unregisterTorch(x: number, y: number, z: number) {
+    const tk = torchKey(x, y, z);
+    torchPositions.delete(tk);
+    const light = activeTorchLights.get(tk);
+    if (light) {
+      scene.remove(light);
+      activeTorchLights.delete(tk);
+    }
+  }
+  function refreshTorchLights(playerPos: THREE.Vector3) {
+    const inRange = Array.from(torchPositions.entries())
+      .map(([tk, pos]) => ({ tk, pos, dist: pos.distanceTo(playerPos) }))
+      .filter((t) => t.dist < TORCH_LIGHT_RANGE)
+      .sort((a, b) => a.dist - b.dist)
+      .slice(0, MAX_ACTIVE_TORCH_LIGHTS);
+    const wanted = new Set(inRange.map((t) => t.tk));
+    for (const [tk, light] of activeTorchLights) {
+      if (!wanted.has(tk)) {
+        scene.remove(light);
+        activeTorchLights.delete(tk);
+      }
+    }
+    for (const t of inRange) {
+      if (activeTorchLights.has(t.tk)) continue;
+      const light = new THREE.PointLight(0xffaa55, 1.3, TORCH_LIGHT_RANGE, 2);
+      light.position.copy(t.pos);
+      scene.add(light);
+      activeTorchLights.set(t.tk, light);
+    }
+  }
+  if (opts.existingSave) {
+    for (const [posKey, blockId] of opts.existingSave.blockEdits) {
+      if (blockId === BlockId.Torch) {
+        const [ex, ey, ez] = posKey.split(',').map(Number);
+        registerTorch(ex, ey, ez);
+      }
+    }
+  }
+
   const player = new PlayerController(camera, renderer.domElement);
   player.controls.pointerSpeed = settings.mouseSensitivity;
   const SPAWN_POSITION = new THREE.Vector3(0.5, 90, 0.5);
@@ -218,6 +271,7 @@ function startGame(opts: PlayOptions) {
   let leftMouseDown = false;
   let miningTarget: { x: number; y: number; z: number } | null = null;
   let miningProgress = 0;
+  let miningSwingTimer = 0;
 
   function resetMining() {
     leftMouseDown = false;
@@ -237,6 +291,7 @@ function startGame(opts: PlayOptions) {
     chunkManager.setBlock(x, y, z, BlockId.Air);
     soundEngine.breakBlock();
     if (brokenId === BlockId.Furnace) furnaceManager.remove(x, y, z);
+    if (brokenId === BlockId.Torch) unregisterTorch(x, y, z);
 
     if (gameMode === 'creative') return; // block just vanishes: no drop, no tool wear (matches vanilla creative)
 
@@ -343,6 +398,7 @@ function startGame(opts: PlayOptions) {
       knockback.normalize().multiplyScalar(3);
       currentMobHit.takeDamage(damage, knockback);
       soundEngine.hit();
+      heldItemView.swing();
       if (heldItemDef?.maxDurability && gameMode === 'survival') gameUI.damageSelectedTool();
       return;
     }
@@ -449,6 +505,7 @@ function startGame(opts: PlayOptions) {
         (Math.floor(py) === Math.floor(feet.y) || Math.floor(py) === Math.floor(feet.y + 1));
       if (!insidePlayer) {
         chunkManager.setBlock(px, py, pz, itemDef.blockId);
+        if (itemDef.blockId === BlockId.Torch) registerTorch(px, py, pz);
         soundEngine.placeBlock();
         consumeSelected();
         gameUI.refreshHotbar();
@@ -486,6 +543,7 @@ function startGame(opts: PlayOptions) {
   let loadingDone = false;
   let lastTime = performance.now();
   let elapsedTime = 0; // free-running seconds for the wind/wave shader (never wraps, unlike clock.elapsed)
+  let torchRefreshTimer = 0;
 
   function animate() {
     requestAnimationFrame(animate);
@@ -494,6 +552,7 @@ function startGame(opts: PlayOptions) {
     lastTime = now;
 
     heldItemView.setItem(gameUI.isOpen || survival.dead ? null : gameUI.selectedItemId);
+    heldItemView.update(dt);
 
     if (!loadingDone) {
       const ready = chunkManager.getReadyChunkCount();
@@ -524,11 +583,21 @@ function startGame(opts: PlayOptions) {
     sunLight.intensity = elevation * 1.1;
     const warmth = THREE.MathUtils.clamp(1 - elevation * 2.2, 0, 1);
     sunLight.color.copy(SUN_DAY_COLOR).lerp(SUN_WARM_COLOR, warmth);
-    hemiLight.intensity = 0.32 + (1 - sky.ambientDarkness) * 0.28;
+    // Lower night floor than before (0.14 vs the old 0.32) so darkness is
+    // actually dark and a torch's light -- baked tint plus its own
+    // PointLight -- reads as making a real difference instead of barely
+    // showing up against an already-lit ambient.
+    hemiLight.intensity = 0.14 + (1 - sky.ambientDarkness) * 0.46;
     hemiLight.color.copy(sky.skyColor);
 
     elapsedTime += dt;
     updateSwayTime(elapsedTime);
+
+    torchRefreshTimer -= dt;
+    if (torchRefreshTimer <= 0) {
+      torchRefreshTimer = 0.5;
+      refreshTorchLights(player.position);
+    }
 
     if (player.isLocked && !gameUI.isOpen && !survival.dead) {
       player.update(dt, (x, y, z) => chunkManager.isSolid(x, y, z), (x, y, z) => chunkManager.getBlock(x, y, z));
@@ -637,6 +706,13 @@ function startGame(opts: PlayOptions) {
         miningBarOuter.style.display = 'none';
         crackOverlay.hide();
       } else {
+        // Swings the hand repeatedly while a hit lands, like vanilla's arm
+        // animation, instead of it sitting frozen for the whole mining bar.
+        miningSwingTimer -= dt;
+        if (miningSwingTimer <= 0) {
+          heldItemView.swing();
+          miningSwingTimer = 0.3;
+        }
         miningProgress += dt;
         miningBarOuter.style.display = 'block';
         const fraction = Math.min(1, miningProgress / Math.max(required, 0.0001));
@@ -653,6 +729,7 @@ function startGame(opts: PlayOptions) {
     } else if (miningProgress > 0 || miningTarget) {
       miningProgress = 0;
       miningTarget = null;
+      miningSwingTimer = 0;
       miningBarOuter.style.display = 'none';
       crackOverlay.hide();
     }
