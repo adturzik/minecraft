@@ -4,11 +4,14 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ChunkManager } from './engine/world/chunkManager';
+import { TerrainGenerator, SEA_LEVEL } from './engine/worldgen/terrain';
 import { raycastVoxels } from './engine/world/voxelRaycast';
 import { PlayerController } from './game/player/playerController';
 import { BlockId, tierIndex, ToolTier } from './game/items/blockDefs';
 import { getBlockDef } from './game/items/blocks';
 import { averageTileColor } from './engine/mesh/textureAtlas';
+import { preloadModels, ALL_MODEL_NAMES } from './engine/assets/models';
+import { itemIconUrl } from './ui/itemIcons';
 import { blockDropItemId, getItemDef, miningSeconds } from './game/items/items';
 import { CrackOverlay } from './engine/mesh/crackOverlay';
 import { HeldItemView } from './engine/mesh/heldItemView';
@@ -159,6 +162,12 @@ function startGame(opts: PlayOptions) {
   soundEngine.setVolumes(settings.masterVolume, settings.sfxVolume, settings.musicVolume);
 
   const loading = new LoadingScreen(opts.worldName);
+  // Fire-and-forget: kicks off loading every tool/weapon/mob GLB the user
+  // generated in parallel with world/chunk generation. 1.6MB total, so this
+  // almost always finishes well before the loading screen does -- held
+  // items and mobs check isModelReady() and fall back gracefully (icon
+  // plane / old procedural mesh) for the rare case a model isn't cached yet.
+  preloadModels(ALL_MODEL_NAMES);
 
   const FOG_NEAR = 70;
   const FOG_FAR = 105;
@@ -197,6 +206,12 @@ function startGame(opts: PlayOptions) {
   sunLight.shadow.camera.updateProjectionMatrix();
   sunLight.shadow.bias = -0.0015;
   sunLight.shadow.normalBias = 0.03;
+  // Shadows should read as "slightly dimmer", not "can't see anything here"
+  // -- full-strength cast shadows under a tree canopy or next to any
+  // building made the ground underneath too dark to make out. Below 1
+  // blends the shadowed result back toward the unshadowed one instead of
+  // fully cutting the sun's direct contribution.
+  sunLight.shadow.intensity = 0.4;
   scene.add(sunLight);
   scene.add(sunLight.target);
   const hemiLight = new THREE.HemisphereLight(0x87ceeb, 0x3a2f1a, 0.55);
@@ -241,7 +256,7 @@ function startGame(opts: PlayOptions) {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  renderer.toneMappingExposure = 1.2;
   app.innerHTML = '';
   app.appendChild(renderer.domElement);
 
@@ -365,7 +380,32 @@ function startGame(opts: PlayOptions) {
   const player = new PlayerController(camera, renderer.domElement);
   player.controls.pointerSpeed = settings.mouseSensitivity;
   player.flightAllowed = gameMode === 'creative'; // free flight is a creative-only privilege, matching vanilla
-  const SPAWN_POSITION = new THREE.Vector3(0.5, 90, 0.5);
+  // Real ground height at the spawn column (not a fixed y=90) so a brand-new
+  // world drops the player right onto the terrain instead of into a long
+  // fall from high in the air. getHeight() is pure/synchronous (same noise
+  // the chunk worker uses), so this doesn't need to wait for any chunk to
+  // actually finish generating -- cheap enough to search a small spiral
+  // around the origin for a dry-land column (matching vanilla's own
+  // land-seeking spawn search) instead of risking (0,0) landing underwater.
+  function findLandSpawn(seed: number): { x: number; z: number; y: number } {
+    const terrain = new TerrainGenerator(seed);
+    const originHeight = terrain.getHeight(0, 0);
+    if (originHeight >= SEA_LEVEL) return { x: 0, z: 0, y: originHeight };
+    for (let radius = 4; radius <= 64; radius += 4) {
+      for (let i = 0; i < 8; i++) {
+        const angle = (i / 8) * Math.PI * 2;
+        const x = Math.round(Math.cos(angle) * radius);
+        const z = Math.round(Math.sin(angle) * radius);
+        const h = terrain.getHeight(x, z);
+        if (h >= SEA_LEVEL) return { x, z, y: h };
+      }
+    }
+    return { x: 0, z: 0, y: originHeight }; // all ocean nearby -- fall back to spawning at sea level
+  }
+  const landSpawn = findLandSpawn(opts.seed);
+  const spawnGroundY = Math.max(landSpawn.y, SEA_LEVEL);
+  const SPAWN_POSITION = new THREE.Vector3(landSpawn.x + 0.5, spawnGroundY + 1, landSpawn.z + 0.5);
+  if (!opts.existingSave) player.position.copy(SPAWN_POSITION);
 
   const gameUI = new GameUI(gameMode);
   const furnaceManager = new FurnaceManager();
@@ -452,8 +492,13 @@ function startGame(opts: PlayOptions) {
   function findSurfaceY(x: number, z: number): number | null {
     for (let y = 100; y > 1; y--) {
       if (chunkManager.isSolid(x, y, z) && !chunkManager.isSolid(x, y + 1, z)) {
-        const top = chunkManager.getBlock(x, y, z);
-        if (top !== BlockId.Water && top !== BlockId.Lava) return y;
+        // Water/lava aren't "solid" (see chunkManager.isSolid), so the scan
+        // above naturally walks straight through a lake and lands on its
+        // bed -- without this check that reads as a valid open-air surface
+        // and mobs (chickens, etc.) spawn on the lake floor, submerged.
+        const above = chunkManager.getBlock(x, y + 1, z);
+        if (above === BlockId.Water || above === BlockId.Lava) return null;
+        return y;
       }
     }
     return null;
@@ -562,6 +607,87 @@ function startGame(opts: PlayOptions) {
     }
   }
 
+  // Physical item drops: breaking a block (or a mob dying, or shearing a
+  // sheep) used to add straight to the inventory instantly. Real Minecraft
+  // drops the item on the ground instead, with its own little fall/bounce,
+  // and only actually collects it once the player walks close enough --
+  // this reproduces that instead of the instant pickup.
+  const dropIconCache = new Map<string, THREE.Texture>();
+  function getDropIconTexture(itemId: string): THREE.Texture {
+    let tex = dropIconCache.get(itemId);
+    if (tex) return tex;
+    const img = new Image();
+    tex = new THREE.Texture(img);
+    tex.magFilter = THREE.LinearFilter;
+    tex.minFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
+    img.onload = () => {
+      tex!.needsUpdate = true;
+    };
+    img.src = itemIconUrl(getItemDef(itemId));
+    dropIconCache.set(itemId, tex);
+    return tex;
+  }
+
+  interface ItemDrop {
+    itemId: string;
+    count: number;
+    sprite: THREE.Sprite;
+    velocity: THREE.Vector3;
+    age: number;
+  }
+  const itemDrops: ItemDrop[] = [];
+  const DROP_PICKUP_RADIUS = 1.1;
+  const DROP_PICKUP_DELAY = 0.4; // matches vanilla's brief can't-instantly-reabsorb window
+  const DROP_MAX_AGE = 120; // despawn after 2 minutes, same idea as vanilla's 5-minute item timeout
+
+  function spawnItemDrop(bx: number, by: number, bz: number, itemId: string, count: number) {
+    const mat = new THREE.SpriteMaterial({ map: getDropIconTexture(itemId), transparent: true });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(0.35, 0.35, 1);
+    sprite.position.set(bx + 0.5 + (Math.random() - 0.5) * 0.4, by + 0.4, bz + 0.5 + (Math.random() - 0.5) * 0.4);
+    scene.add(sprite);
+    itemDrops.push({
+      itemId,
+      count,
+      sprite,
+      velocity: new THREE.Vector3((Math.random() - 0.5) * 1.4, 2.2, (Math.random() - 0.5) * 1.4),
+      age: 0,
+    });
+  }
+
+  function updateItemDrops(dt: number) {
+    for (let i = itemDrops.length - 1; i >= 0; i--) {
+      const d = itemDrops[i];
+      d.age += dt;
+      d.velocity.y -= 9 * dt;
+      const next = d.sprite.position.clone().addScaledVector(d.velocity, dt);
+      if (chunkManager.isSolid(Math.floor(next.x), Math.floor(next.y), Math.floor(next.z))) {
+        d.velocity.set(0, 0, 0);
+      } else {
+        d.sprite.position.copy(next);
+      }
+
+      let collected = false;
+      if (d.age >= DROP_PICKUP_DELAY) {
+        const dx = d.sprite.position.x - player.position.x;
+        const dy = d.sprite.position.y - (player.position.y + 0.9);
+        const dz = d.sprite.position.z - player.position.z;
+        if (dx * dx + dy * dy + dz * dz < DROP_PICKUP_RADIUS * DROP_PICKUP_RADIUS) {
+          gameUI.giveItem(d.itemId, d.count);
+          soundEngine.uiClick();
+          collected = true;
+        }
+      }
+      if (collected || d.age > DROP_MAX_AGE) {
+        scene.remove(d.sprite);
+        (d.sprite.material as THREE.SpriteMaterial).map?.dispose();
+        (d.sprite.material as THREE.Material).dispose();
+        itemDrops.splice(i, 1);
+      }
+    }
+  }
+
   /** Breaks the block at (x,y,z): removes it, plays the sound, drops the
    * harvested item (if the held tool meets the block's minimum tier) and
    * damages the held tool. Shared by the instant-break path (hardness 0
@@ -586,7 +712,7 @@ function startGame(opts: PlayOptions) {
       (heldItemDef?.toolType === 'pickaxe' && tierIndex(heldItemDef.toolTier as ToolTier) >= tierIndex(blockDef.minToolTier));
     if (harvestable) {
       const dropId = blockDropItemId(brokenId);
-      if (dropId) gameUI.giveItem(dropId, 1);
+      if (dropId) spawnItemDrop(x, y, z, dropId, 1);
     }
     gameUI.damageSelectedTool();
   }
@@ -689,7 +815,13 @@ function startGame(opts: PlayOptions) {
 
     if (e.button === 2 && currentMobHit && currentMobHit.config.kind === 'sheep' && gameUI.selectedItemId === 'shears') {
       // Shear a sheep instead of killing it for wool -- doesn't touch its HP.
-      gameUI.giveItem('wool', 1 + Math.floor(Math.random() * 3));
+      spawnItemDrop(
+        Math.floor(currentMobHit.position.x),
+        Math.floor(currentMobHit.position.y),
+        Math.floor(currentMobHit.position.z),
+        'wool',
+        1 + Math.floor(Math.random() * 3)
+      );
       soundEngine.placeBlock();
       if (gameMode === 'survival') gameUI.damageSelectedTool();
       return;
@@ -870,11 +1002,13 @@ function startGame(opts: PlayOptions) {
     sunLight.intensity = elevation * 1.1;
     const warmth = THREE.MathUtils.clamp(1 - elevation * 2.2, 0, 1);
     sunLight.color.copy(SUN_DAY_COLOR).lerp(SUN_WARM_COLOR, warmth);
-    // Lower night floor than before (0.14 vs the old 0.32) so darkness is
-    // actually dark and a torch's light -- baked tint plus its own
-    // PointLight -- reads as making a real difference instead of barely
-    // showing up against an already-lit ambient.
-    hemiLight.intensity = 0.14 + (1 - sky.ambientDarkness) * 0.46;
+    // Raised from the original 0.14/0.46 -- shaded daytime spots (under a
+    // tree canopy, north sides of buildings, anywhere the shadow map blocks
+    // direct sun) had only this ambient term to fall back on, and it read
+    // as too dark to see well. Night floor (0.2) stays clearly dimmer than
+    // day so a torch's light -- baked tint plus its own PointLight -- still
+    // reads as making a real difference.
+    hemiLight.intensity = 0.2 + (1 - sky.ambientDarkness) * 0.55;
     hemiLight.color.copy(sky.skyColor);
 
     // Sun/moon discs and stars sit at a fixed distance from the camera and
@@ -913,6 +1047,7 @@ function startGame(opts: PlayOptions) {
     elapsedTime += dt;
     updateSwayTime(elapsedTime);
     updateBreakParticles(dt);
+    updateItemDrops(dt);
 
     torchRefreshTimer -= dt;
     if (torchRefreshTimer <= 0) {
@@ -973,7 +1108,9 @@ function startGame(opts: PlayOptions) {
         (mob) => {
           for (const drop of mob.config.drops) {
             const count = drop.min + Math.floor(Math.random() * (drop.max - drop.min + 1));
-            if (count > 0) gameUI.giveItem(drop.itemId, count);
+            if (count > 0) {
+              spawnItemDrop(Math.floor(mob.position.x), Math.floor(mob.position.y), Math.floor(mob.position.z), drop.itemId, count);
+            }
           }
         }
       );
