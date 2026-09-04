@@ -263,6 +263,18 @@ function hoeShape(ctx: CanvasRenderingContext2D, color: RGB) {
   toolHandle(ctx, 7, 5, 8);
 }
 
+function shearsShape(ctx: CanvasRenderingContext2D, color: RGB) {
+  const dark = shade(color, -35);
+  // two crossed blades pivoting at center, handle behind
+  for (let i = 0; i < 7; i++) {
+    px(ctx, 4 + i, 3 + i, 2, 2, color);
+    px(ctx, 10 - i, 3 + i, 2, 2, color);
+  }
+  px(ctx, 6, 9, 4, 2, dark);
+  px(ctx, 4, 11, 3, 2, HANDLE);
+  px(ctx, 9, 11, 3, 2, HANDLE);
+}
+
 function helmetShape(ctx: CanvasRenderingContext2D, color: RGB) {
   const dark = shade(color, -30);
   px(ctx, 4, 3, 8, 1, color);
@@ -319,6 +331,7 @@ const ARMOR_SHAPE: Record<string, (ctx: CanvasRenderingContext2D, color: RGB) =>
 // per-id shape here; everything else falls into the id-prefix rules below.
 const EXPLICIT_SHAPE: Record<string, (ctx: CanvasRenderingContext2D, color: RGB) => void> = {
   stick: stickShape,
+  shears: shearsShape,
   bone: boneShape,
   feather: featherShape,
   string: stringShape,
