@@ -8,6 +8,8 @@ import * as THREE from 'three';
 
 function box(w: number, h: number, d: number, color: number): THREE.Mesh {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshLambertMaterial({ color }));
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
   return mesh;
 }
 

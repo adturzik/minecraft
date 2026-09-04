@@ -1,4 +1,8 @@
 import * as THREE from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ChunkManager } from './engine/world/chunkManager';
 import { raycastVoxels } from './engine/world/voxelRaycast';
 import { PlayerController } from './game/player/playerController';
@@ -46,6 +50,107 @@ function footstepMaterialFor(blockId: number): FootstepMaterial {
   return FOOTSTEP_MATERIAL[getBlockDef(blockId).key] ?? 'default';
 }
 
+// --- Procedural sky dressing (sun/moon discs, stars, clouds) --------------
+// All textures are generated on a <canvas> at startup, same no-external-
+// assets approach as the block textures, so there's nothing to fetch/host.
+
+function makeGlowDiscTexture(coreColor: string, edgeAlpha = 0): HTMLCanvasElement {
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  grad.addColorStop(0, coreColor);
+  grad.addColorStop(0.55, coreColor);
+  grad.addColorStop(1, `rgba(255,255,255,${edgeAlpha})`);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+  return canvas;
+}
+
+function makeMoonTexture(): THREE.CanvasTexture {
+  const canvas = makeGlowDiscTexture('rgba(226,230,238,1)');
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = 'rgba(170,178,196,0.5)';
+  const craters: [number, number, number][] = [[46, 40, 9], [80, 58, 13], [58, 82, 7], [90, 30, 6], [34, 78, 5]];
+  for (const [cx, cy, r] of craters) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  return new THREE.CanvasTexture(canvas);
+}
+
+function makeStarField(count: number, radius: number): THREE.Points {
+  const positions = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const y = 1 - 2 * Math.random();
+    const r = Math.sqrt(Math.max(0, 1 - y * y));
+    const theta = 2 * Math.PI * Math.random();
+    positions[i * 3] = Math.cos(theta) * r * radius;
+    positions[i * 3 + 1] = Math.abs(y) * radius; // upper hemisphere only -- stars, not underworld glow
+    positions[i * 3 + 2] = Math.sin(theta) * r * radius;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const mat = new THREE.PointsMaterial({
+    color: 0xffffff, size: 1.6, sizeAttenuation: false,
+    transparent: true, opacity: 0, depthWrite: false, fog: false,
+  });
+  const points = new THREE.Points(geo, mat);
+  points.renderOrder = -3;
+  return points;
+}
+
+/** A seamlessly-tileable soft cloud texture: blobs are stamped at their base
+ * position plus all 8 neighboring offsets so edges wrap cleanly under
+ * THREE.RepeatWrapping. */
+function makeCloudTexture(): THREE.CanvasTexture {
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  ctx.clearRect(0, 0, size, size);
+  const blobs: [number, number, number][] = [];
+  const rand = mulberry32(1337);
+  for (let i = 0; i < 22; i++) {
+    blobs.push([rand() * size, rand() * size, 30 + rand() * 70]);
+  }
+  for (const [bx, by, r] of blobs) {
+    for (const ox of [-size, 0, size]) {
+      for (const oy of [-size, 0, size]) {
+        const x = bx + ox;
+        const y = by + oy;
+        if (x < -r || x > size + r || y < -r || y > size + r) continue;
+        const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+        grad.addColorStop(0, 'rgba(255,255,255,0.9)');
+        grad.addColorStop(0.6, 'rgba(255,255,255,0.5)');
+        grad.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(4, 4);
+  return texture;
+}
+
+function mulberry32(seed: number): () => number {
+  let a = seed;
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 function startGame(opts: PlayOptions) {
   const gameMode: GameMode = opts.gameMode;
   const settings = loadSettings();
@@ -54,9 +159,13 @@ function startGame(opts: PlayOptions) {
 
   const loading = new LoadingScreen(opts.worldName);
 
+  const FOG_NEAR = 70;
+  const FOG_FAR = 105;
+  const UNDERWATER_FOG_COLOR = new THREE.Color(0x1c4a78);
+
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87ceeb);
-  scene.fog = new THREE.Fog(0x87ceeb, 70, 105);
+  scene.fog = new THREE.Fog(0x87ceeb, FOG_NEAR, FOG_FAR);
 
   const camera = new THREE.PerspectiveCamera(settings.fov, window.innerWidth / window.innerHeight, 0.1, 800);
   camera.rotation.order = 'YXZ';
@@ -72,16 +181,77 @@ function startGame(opts: PlayOptions) {
   // never go pure black (the baked per-face vertex shading still supplies
   // the Minecraft-style AO/light-level base on top of this).
   const sunLight = new THREE.DirectionalLight(0xffffff, 0.9);
+  sunLight.castShadow = true;
+  sunLight.shadow.mapSize.set(2048, 2048);
+  sunLight.shadow.camera.near = 1;
+  sunLight.shadow.camera.far = 260;
+  // Kept tight (a ~44-block radius around the player) rather than matching
+  // full render distance: shadow cost scales with frustum area, not chunk
+  // count, so a small frustum is what keeps this affordable every frame.
+  const SHADOW_HALF_SIZE = 44;
+  sunLight.shadow.camera.left = -SHADOW_HALF_SIZE;
+  sunLight.shadow.camera.right = SHADOW_HALF_SIZE;
+  sunLight.shadow.camera.top = SHADOW_HALF_SIZE;
+  sunLight.shadow.camera.bottom = -SHADOW_HALF_SIZE;
+  sunLight.shadow.camera.updateProjectionMatrix();
+  sunLight.shadow.bias = -0.0015;
+  sunLight.shadow.normalBias = 0.03;
   scene.add(sunLight);
   scene.add(sunLight.target);
   const hemiLight = new THREE.HemisphereLight(0x87ceeb, 0x3a2f1a, 0.55);
   scene.add(hemiLight);
 
+  // Sky dressing: sun/moon discs and a starfield, all positioned at a fixed
+  // "infinite" distance from the camera and recentered on it every frame
+  // (see the sky-follow block in animate()), same trick as a skybox.
+  const sunSprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(makeGlowDiscTexture('rgba(255,252,235,1)')), transparent: true, depthWrite: false, fog: false, blending: THREE.AdditiveBlending })
+  );
+  sunSprite.scale.set(55, 55, 1);
+  sunSprite.renderOrder = -2;
+  scene.add(sunSprite);
+
+  const moonSprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: makeMoonTexture(), transparent: true, depthWrite: false, fog: false })
+  );
+  moonSprite.scale.set(38, 38, 1);
+  moonSprite.renderOrder = -2;
+  scene.add(moonSprite);
+
+  const stars = makeStarField(1400, 400);
+  scene.add(stars);
+
+  // Drifting cloud layer: one big plane recentered under the player each
+  // frame with the UV offset animated over time, so the clouds themselves
+  // drift independently of camera movement.
+  const cloudTexture = makeCloudTexture();
+  const cloudMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(700, 700),
+    new THREE.MeshBasicMaterial({ map: cloudTexture, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide, fog: true })
+  );
+  cloudMesh.rotation.x = Math.PI / 2;
+  cloudMesh.position.y = 148;
+  cloudMesh.renderOrder = -1;
+  scene.add(cloudMesh);
+
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
   app.innerHTML = '';
   app.appendChild(renderer.domElement);
+
+  // Conservative bloom: only pixels already near-white (sun disc, bright sky
+  // near the horizon) pick up a soft glow -- ordinary block faces sit well
+  // below the threshold so they're untouched.
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.45, 0.4, 0.86);
+  composer.addPass(bloomPass);
+  composer.addPass(new OutputPass());
 
   const chunkManager = new ChunkManager(scene, { seed: opts.seed, renderDistance: settings.renderDistance });
   if (opts.existingSave) chunkManager.loadEdits(opts.existingSave.blockEdits);
@@ -257,6 +427,10 @@ function startGame(opts: PlayOptions) {
   const nightOverlay = document.createElement('div');
   nightOverlay.style.cssText = 'position:fixed;inset:0;background:#00081a;opacity:0;pointer-events:none;z-index:5;transition:opacity 1s linear;';
   document.body.appendChild(nightOverlay);
+
+  const waterOverlay = document.createElement('div');
+  waterOverlay.style.cssText = 'position:fixed;inset:0;background:radial-gradient(circle,rgba(40,110,180,0.25) 0%,rgba(20,70,140,0.55) 100%);opacity:0;pointer-events:none;z-index:6;transition:opacity 0.4s linear;';
+  document.body.appendChild(waterOverlay);
 
   survivalHUD.setRespawnHandler(() => {
     player.position.copy(SPAWN_POSITION);
@@ -588,6 +762,8 @@ function startGame(opts: PlayOptions) {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    composer.setSize(window.innerWidth, window.innerHeight);
+    bloomPass.setSize(window.innerWidth, window.innerHeight);
   });
 
   const autosaveTimer = setInterval(doSave, 60000);
@@ -645,6 +821,39 @@ function startGame(opts: PlayOptions) {
     // showing up against an already-lit ambient.
     hemiLight.intensity = 0.14 + (1 - sky.ambientDarkness) * 0.46;
     hemiLight.color.copy(sky.skyColor);
+
+    // Sun/moon discs and stars sit at a fixed distance from the camera and
+    // just get recentered every frame, like a conventional skybox -- the
+    // moon is exactly opposite the sun, matching real Minecraft's sky.
+    sunSprite.position.copy(camera.position).addScaledVector(sky.sunDirection, 400);
+    moonSprite.position.copy(camera.position).addScaledVector(sky.sunDirection, -400);
+    (sunSprite.material as THREE.SpriteMaterial).opacity = 1 - sky.ambientDarkness;
+    (moonSprite.material as THREE.SpriteMaterial).opacity = sky.ambientDarkness;
+    (stars.material as THREE.PointsMaterial).opacity = sky.ambientDarkness * 0.9;
+    stars.position.copy(camera.position);
+
+    // Clouds drift on their own via animated UV offset; the plane itself
+    // just follows the player on x/z so it never scrolls out of view.
+    cloudMesh.position.x = camera.position.x;
+    cloudMesh.position.z = camera.position.z;
+    const cloudMap = (cloudMesh.material as THREE.MeshBasicMaterial).map!;
+    cloudMap.offset.x = elapsedTime * 0.004;
+    cloudMap.offset.y = elapsedTime * 0.0015;
+    (cloudMesh.material as THREE.MeshBasicMaterial).opacity = 0.8 * (1 - sky.ambientDarkness * 0.6);
+
+    // Underwater look: denser near fog in a blue-green tint plus a screen
+    // tint overlay, using the head-submersion flag survival breath already
+    // relies on -- no new detection logic needed.
+    if (player.headUnderwater) {
+      (scene.fog as THREE.Fog).color.copy(UNDERWATER_FOG_COLOR);
+      (scene.fog as THREE.Fog).near = 1;
+      (scene.fog as THREE.Fog).far = 22;
+      waterOverlay.style.opacity = '1';
+    } else {
+      (scene.fog as THREE.Fog).near = FOG_NEAR;
+      (scene.fog as THREE.Fog).far = FOG_FAR;
+      waterOverlay.style.opacity = '0';
+    }
 
     elapsedTime += dt;
     updateSwayTime(elapsedTime);
@@ -799,7 +1008,7 @@ function startGame(opts: PlayOptions) {
 
     hud.textContent = `${opts.worldName} | seed: ${opts.seed} | chunks: ${chunkManager.getReadyChunkCount()}/${chunkManager.getLoadedChunkCount()} | pos: ${player.position.x.toFixed(1)}, ${player.position.y.toFixed(1)}, ${player.position.z.toFixed(1)} | ${player.flying ? 'flying' : player.grounded ? 'grounded' : 'air'} | mobs: ${mobManager.getMobs().length} | ${sky.isNight ? 'night' : 'day'}`;
 
-    renderer.render(scene, camera);
+    composer.render();
   }
   animate();
 }

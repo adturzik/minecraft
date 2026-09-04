@@ -94,12 +94,15 @@ export class ChunkManager {
     if (opaqueGeo) {
       const mesh = new THREE.Mesh(opaqueGeo, this.materials.opaque);
       mesh.position.set(data.cx * CHUNK_SIZE_X, 0, data.cz * CHUNK_SIZE_Z);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
       this.scene.add(mesh);
       entry.opaqueMesh = mesh;
     }
     if (transparentGeo) {
       const mesh = new THREE.Mesh(transparentGeo, this.materials.transparent);
       mesh.position.set(data.cx * CHUNK_SIZE_X, 0, data.cz * CHUNK_SIZE_Z);
+      mesh.receiveShadow = true;
       this.scene.add(mesh);
       entry.transparentMesh = mesh;
     }
@@ -250,6 +253,8 @@ export class ChunkManager {
     if (opaqueGeo) {
       const mesh = new THREE.Mesh(opaqueGeo, this.materials.opaque);
       mesh.position.set(entry.cx * CHUNK_SIZE_X, 0, entry.cz * CHUNK_SIZE_Z);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
       this.scene.add(mesh);
       entry.opaqueMesh = mesh;
     }
@@ -257,6 +262,7 @@ export class ChunkManager {
     if (transparentGeo) {
       const mesh = new THREE.Mesh(transparentGeo, this.materials.transparent);
       mesh.position.set(entry.cx * CHUNK_SIZE_X, 0, entry.cz * CHUNK_SIZE_Z);
+      mesh.receiveShadow = true;
       this.scene.add(mesh);
       entry.transparentMesh = mesh;
     }
