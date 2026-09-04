@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createNoise2D } from 'simplex-noise';
 
 export const TILE_SIZE = 16;
 export const ATLAS_TILES = 16; // 16x16 grid
@@ -153,6 +154,28 @@ class TextureAtlasBuilder {
 
 export const atlasBuilder = new TextureAtlasBuilder();
 
+const avgColorCache = new Map<number, [number, number, number]>();
+/** Average RGB of a registered tile -- used to tint block-break particle
+ * debris so it reads as a real chunk of that block instead of a generic
+ * gray cube. */
+export function averageTileColor(tile: TileRect): [number, number, number] {
+  const hit = avgColorCache.get(tile.index);
+  if (hit) return hit;
+  const sx = Math.round(tile.u0 * ATLAS_SIZE);
+  const sy = Math.round(tile.v0 * ATLAS_SIZE);
+  const data = atlasBuilder.debugCanvas.getContext('2d')!.getImageData(sx, sy, TILE_SIZE, TILE_SIZE).data;
+  let r = 0, g = 0, b = 0;
+  const n = TILE_SIZE * TILE_SIZE;
+  for (let i = 0; i < data.length; i += 4) {
+    r += data[i];
+    g += data[i + 1];
+    b += data[i + 2];
+  }
+  const avg: [number, number, number] = [r / n, g / n, b / n];
+  avgColorCache.set(tile.index, avg);
+  return avg;
+}
+
 // ---------------- draw helpers ----------------
 
 function clampByte(v: number) {
@@ -163,11 +186,18 @@ function shadeRGB(color: [number, number, number], amt: number): [number, number
   return [clampByte(color[0] + amt), clampByte(color[1] + amt), clampByte(color[2] + amt)];
 }
 
+// Organic value-noise shading (two octaves of simplex noise) instead of
+// independent per-pixel randomness -- reads as a natural, slightly uneven
+// rock/soil/sand surface rather than TV-static speckle, even at this small
+// tile resolution.
 export function solid(color: [number, number, number], noise = 14): DrawFn {
   return (ctx, px, py, size, rng) => {
+    const n2 = createNoise2D(rng);
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
-        const n = (rng() - 0.5) * noise;
+        const large = n2(x * 0.28, y * 0.28);
+        const fine = n2(x * 0.9 + 40, y * 0.9 + 40) * 0.5;
+        const n = (large + fine) * noise * 0.55;
         const [r, g, b] = shadeRGB(color, n);
         ctx.fillStyle = `rgb(${r},${g},${b})`;
         ctx.fillRect(px + x, py + y, 1, 1);
@@ -183,9 +213,16 @@ export function speckled(
 ): DrawFn {
   return (ctx, px, py, size, rng) => {
     solid(base, 10)(ctx, px, py, size, rng);
+    // Speckle placement follows a noise field rather than uniform
+    // independent chance, so grains/flecks cluster into small natural
+    // patches (like real ore veins or grain in stone) instead of an even
+    // digital scatter.
+    const n2 = createNoise2D(rng);
+    const threshold = density * 2 - 1;
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
-        if (rng() < density) {
+        const field = n2(x * 0.55 + 100, y * 0.55 + 100);
+        if (field < threshold) {
           const n = (rng() - 0.5) * 20;
           const [r, g, b] = shadeRGB(speck, n);
           ctx.fillStyle = `rgb(${r},${g},${b})`;
@@ -198,13 +235,18 @@ export function speckled(
 
 export function grain(base: [number, number, number], lineColor: [number, number, number]): DrawFn {
   return (ctx, px, py, size, rng) => {
-    solid(base, 8)(ctx, px, py, size, rng);
+    solid(base, 7)(ctx, px, py, size, rng);
+    // A shared noise field wobbles every grain line's start/length together,
+    // so lines read as one continuous flowing wood grain instead of
+    // independently-random streaks on each row.
+    const n2 = createNoise2D(rng);
     for (let y = 0; y < size; y++) {
-      if (rng() < 0.45) {
+      const wobble = n2(0, y * 0.35) * 3;
+      if (rng() < 0.55) {
         ctx.fillStyle = `rgba(${lineColor[0]},${lineColor[1]},${lineColor[2]},0.5)`;
-        const len = 3 + Math.floor(rng() * (size - 3));
-        const startX = Math.floor(rng() * Math.max(1, size - len));
-        ctx.fillRect(px + startX, py + y, len, 1);
+        const len = 4 + Math.floor(rng() * (size - 4));
+        const startX = Math.max(0, Math.round(wobble + rng() * Math.max(1, size - len)));
+        ctx.fillRect(px + startX, py + y, Math.min(len, size - startX), 1);
       }
     }
   };
@@ -212,16 +254,28 @@ export function grain(base: [number, number, number], lineColor: [number, number
 
 export function rings(base: [number, number, number], ringColor: [number, number, number]): DrawFn {
   return (ctx, px, py, size, rng) => {
-    solid(base, 8)(ctx, px, py, size, rng);
+    solid(base, 7)(ctx, px, py, size, rng);
     const cx = px + size / 2;
     const cy = py + size / 2;
+    // Jitter each ring's radius per-angle via noise instead of drawing a
+    // perfect circle, giving the hand-cut, slightly-irregular look of a
+    // real cross-cut tree trunk.
+    const n2 = createNoise2D(rng);
     ctx.strokeStyle = `rgb(${ringColor[0]},${ringColor[1]},${ringColor[2]})`;
     for (let r = 1.5; r < size / 2; r += 2) {
+      const steps = 20;
       ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      for (let i = 0; i <= steps; i++) {
+        const a = (i / steps) * Math.PI * 2;
+        const jitter = n2(Math.cos(a) * 1.5, Math.sin(a) * 1.5) * 0.9;
+        const rr = r + jitter;
+        const x = cx + Math.cos(a) * rr;
+        const y = cy + Math.sin(a) * rr;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
       ctx.stroke();
     }
-    void rng;
   };
 }
 
@@ -243,7 +297,7 @@ export function crossFoliage(base: [number, number, number]): DrawFn {
 
 export function liquid(base: [number, number, number]): DrawFn {
   return (ctx, px, py, size, rng) => {
-    solid(base, 16)(ctx, px, py, size, rng);
+    solid(base, 20)(ctx, px, py, size, rng);
   };
 }
 

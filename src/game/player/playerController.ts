@@ -44,6 +44,10 @@ export class PlayerController {
   private keys = new Set<string>();
   private flyToggleLatch = false;
   private highestYSinceGrounded = this.position.y;
+  // View bob: a small footstep-timed head sway while walking on the ground,
+  // faded in/out via bobAmount rather than switched on/off so it never pops.
+  private bobPhase = 0;
+  private bobAmount = 0;
 
   constructor(camera: THREE.PerspectiveCamera, domElement: HTMLElement) {
     this.camera = camera;
@@ -163,6 +167,12 @@ export class PlayerController {
       this.highestYSinceGrounded = this.position.y;
     }
 
-    this.camera.position.set(this.position.x, this.position.y + EYE_HEIGHT, this.position.z);
+    const horizSpeed = Math.hypot(this.velocity.x, this.velocity.z);
+    const bobbing = this.grounded && !this.flying && !swimming && horizSpeed > 0.5;
+    this.bobPhase += horizSpeed * dt * 1.5;
+    this.bobAmount += ((bobbing ? 1 : 0) - this.bobAmount) * Math.min(1, dt * 8);
+    const bobY = Math.abs(Math.sin(this.bobPhase * 2)) * 0.045 * this.bobAmount;
+    const bobX = Math.sin(this.bobPhase) * 0.03 * this.bobAmount;
+    this.camera.position.set(this.position.x + bobX, this.position.y + EYE_HEIGHT + bobY, this.position.z);
   }
 }
