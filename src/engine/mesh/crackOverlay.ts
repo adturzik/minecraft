@@ -35,19 +35,35 @@ function buildStageTexture(stage: number): THREE.DataTexture {
   const ctx = canvas.getContext('2d')!;
   ctx.imageSmoothingEnabled = false;
 
-  const base = 90;
-  ctx.fillStyle = `rgb(${base},${base},${base})`;
+  // Black base (not a mid-gray wash) so that, blended at the low opacity
+  // early stages use (see getStageMaterials), the block underneath barely
+  // changes at all -- a uniform gray base at even modest opacity visibly
+  // lightened dark blocks, which read as "the block brightens" instead of
+  // "cracks are forming".
+  ctx.fillStyle = '#000000';
   ctx.fillRect(0, 0, TILE, TILE);
 
+  // A handful of branching fracture lines radiating from the block's
+  // center, more of them (and longer) each stage -- reads as real fissures
+  // spreading across the face rather than a flat tint growing darker.
   const rng = mulberry32(stage * 7919 + 13);
-  const coverage = (stage + 1) / STAGES; // fraction of the tile blacked out this stage
-  for (let y = 0; y < TILE; y++) {
-    for (let x = 0; x < TILE; x++) {
-      if (rng() < coverage * 0.85) {
-        const dark = 10 + Math.floor(rng() * 20);
-        ctx.fillStyle = `rgb(${dark},${dark},${dark})`;
-        ctx.fillRect(x, y, 1, 1);
-      }
+  const branches = 2 + stage;
+  for (let b = 0; b < branches; b++) {
+    let x = TILE / 2 + (rng() - 0.5) * 3;
+    let y = TILE / 2 + (rng() - 0.5) * 3;
+    let angle = rng() * Math.PI * 2;
+    const steps = 3 + Math.floor(rng() * 3) + stage;
+    for (let s = 0; s < steps; s++) {
+      angle += (rng() - 0.5) * 1.3;
+      x += Math.cos(angle) * 1.3;
+      y += Math.sin(angle) * 1.3;
+      const px = Math.round(x);
+      const py = Math.round(y);
+      if (px < 0 || px >= TILE || py < 0 || py >= TILE) break;
+      const dark = 8 + Math.floor(rng() * 14);
+      ctx.fillStyle = `rgb(${dark},${dark},${dark})`;
+      ctx.fillRect(px, py, 1, 1);
+      if (rng() < 0.5) ctx.fillRect(px + (rng() < 0.5 ? 1 : -1), py, 1, 1); // slightly thicker lines
     }
   }
 
@@ -69,11 +85,16 @@ function getStageMaterials(): THREE.MeshBasicMaterial[] {
   if (stageMaterials) return stageMaterials;
   stageMaterials = [];
   for (let i = 0; i < STAGES; i++) {
+    // Power curve, not linear: stays faint for the first few stages (barely
+    // more than a hint of cracking) and only really darkens near the end,
+    // so mining reads as "cracks gradually spreading, then the block gives
+    // way" like vanilla, instead of "the whole face lightens uniformly".
+    const t = i / (STAGES - 1);
     stageMaterials.push(
       new THREE.MeshBasicMaterial({
         map: buildStageTexture(i),
         transparent: true,
-        opacity: 0.12 + 0.63 * (i / (STAGES - 1)),
+        opacity: 0.06 + 0.85 * Math.pow(t, 1.6),
         depthWrite: false,
         polygonOffset: true,
         polygonOffsetFactor: -4,
