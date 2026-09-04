@@ -1,4 +1,5 @@
 import { SurvivalState } from '../../game/player/survival';
+import type { GameMode } from '../../game/player/gameMode';
 import { heartIcon, drumstickIcon, bubbleIcon, makeIcon } from '../pixelIcons';
 import { panelStyle, buttonStyle, attachButtonHover, BODY_FONT, TITLE_FONT, logoTextShadow } from '../pixelStyle';
 
@@ -49,7 +50,17 @@ export class SurvivalHUD {
     this.onRespawnClick = fn;
   }
 
-  update(state: SurvivalState) {
+  update(state: SurvivalState, gameMode: GameMode = 'survival') {
+    // Creative has no health/hunger/breath to track (matches vanilla, which
+    // hides these bars entirely in creative).
+    const show = gameMode === 'survival' ? 'flex' : 'none';
+    this.healthRow.style.display = show;
+    this.hungerRow.style.display = show;
+    if (gameMode === 'creative') {
+      this.breathRow.style.display = 'none';
+      this.deathScreen.style.display = 'none';
+      return;
+    }
     this.healthRow.innerHTML = '';
     for (let i = 0; i < ICON_COUNT; i++) {
       const filled = state.health >= (i + 1) * 2;

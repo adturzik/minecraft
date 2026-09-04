@@ -1,10 +1,31 @@
 import { Inventory, Slot, HOTBAR_SIZE, ARMOR_TYPES } from '../game/player/inventory';
-import { getItemDef } from '../game/items/items';
+import { getItemDef, ItemDef, ITEMS } from '../game/items/items';
 import { matchRecipe } from '../game/crafting/craftingMatcher';
 import { FurnaceState } from '../game/crafting/furnaceManager';
-import { slotStyle, panelStyle, BODY_FONT, bevel, STONE } from './pixelStyle';
+import { slotStyle, panelStyle, BODY_FONT, bevel, STONE, buttonStyle, attachButtonHover } from './pixelStyle';
 import { soundEngine } from '../audio/soundEngine';
 import { itemIconUrl } from './itemIcons';
+import type { GameMode } from '../game/player/gameMode';
+
+type CreativeTab = 'blocks' | 'tools' | 'combat' | 'food' | 'materials';
+const CREATIVE_TAB_LABEL: Record<CreativeTab, string> = {
+  blocks: 'Bloky',
+  tools: 'Nástroje',
+  combat: 'Boj',
+  food: 'Jídlo',
+  materials: 'Materiály',
+};
+
+function itemCategory(def: ItemDef): CreativeTab {
+  if (def.armorType || def.toolType === 'sword') return 'combat';
+  if (def.toolType) return 'tools';
+  if (def.foodRestore) return 'food';
+  if (def.isBlock) return 'blocks';
+  return 'materials';
+}
+
+const CREATIVE_ITEMS_BY_TAB: Record<CreativeTab, ItemDef[]> = { blocks: [], tools: [], combat: [], food: [], materials: [] };
+for (const def of ITEMS) CREATIVE_ITEMS_BY_TAB[itemCategory(def)].push(def);
 
 function styleSlotEl(el: HTMLDivElement, size = 40) {
   el.style.cssText = slotStyle(size) + 'cursor:pointer;user-select:none;';
@@ -141,6 +162,8 @@ export type WorldBlockTarget = { x: number; y: number; z: number };
 export class GameUI {
   readonly inventory = new Inventory();
   private held: Slot = null;
+  private gameMode: GameMode;
+  private creativeTab: CreativeTab = 'blocks';
 
   private hotbarEls: HTMLDivElement[] = [];
   private heldCursorEl: HTMLDivElement;
@@ -162,7 +185,8 @@ export class GameUI {
    * captured for camera-look and can't click on slots. */
   onOpenScreen: (() => void) | null = null;
 
-  constructor() {
+  constructor(gameMode: GameMode = 'survival') {
+    this.gameMode = gameMode;
     this.buildHotbar();
     this.heldCursorEl = document.createElement('div');
     // Must render above screenRoot (z-index 1600) — this follows the cursor
@@ -274,7 +298,8 @@ export class GameUI {
     this.craftOutput = null;
     this.screenOpen = true;
     this.onOpenScreen?.();
-    this.render();
+    if (this.gameMode === 'creative') this.renderCreative();
+    else this.render();
   }
 
   openCraftingTable() {
@@ -363,6 +388,39 @@ export class GameUI {
     }
   }
 
+  private buildCharacterPanel(): HTMLDivElement {
+    const characterPanel = document.createElement('div');
+    characterPanel.style.cssText = 'display:flex;align-items:flex-start;gap:8px;margin-right:6px;';
+    characterPanel.appendChild(buildCharacterPreview(this.inventory));
+
+    const armorCol = document.createElement('div');
+    armorCol.style.cssText = 'display:grid;grid-template-columns:repeat(1,40px);gap:2px;background:rgba(0,0,0,0.15);padding:4px;';
+    const ARMOR_LABEL: Record<string, string> = { helmet: 'HL', chestplate: 'CH', leggings: 'LG', boots: 'BT' };
+    ARMOR_TYPES.forEach((type, i) => {
+      const el = document.createElement('div');
+      styleSlotEl(el);
+      renderSlotContent(el, this.inventory.armorSlots[i]);
+      if (!this.inventory.armorSlots[i]) {
+        const placeholder = document.createElement('div');
+        placeholder.style.cssText = `position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:8px ${BODY_FONT};color:rgba(0,0,0,0.35);pointer-events:none;`;
+        placeholder.textContent = ARMOR_LABEL[type];
+        el.appendChild(placeholder);
+      }
+      el.addEventListener('click', () => {
+        soundEngine.uiClick();
+        this.onArmorSlotClick(i, false);
+      });
+      el.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        soundEngine.uiClick();
+        this.onArmorSlotClick(i, true);
+      });
+      armorCol.appendChild(el);
+    });
+    characterPanel.appendChild(armorCol);
+    return characterPanel;
+  }
+
   private render() {
     this.renderHeldCursor();
     this.screenRoot.style.display = 'flex';
@@ -380,38 +438,7 @@ export class GameUI {
     const craftRow = document.createElement('div');
     craftRow.style.cssText = 'display:flex;align-items:center;gap:10px;';
 
-    if (!this.hasTable) {
-      const characterPanel = document.createElement('div');
-      characterPanel.style.cssText = 'display:flex;align-items:flex-start;gap:8px;margin-right:6px;';
-      characterPanel.appendChild(buildCharacterPreview(this.inventory));
-
-      const armorCol = document.createElement('div');
-      armorCol.style.cssText = 'display:grid;grid-template-columns:repeat(1,40px);gap:2px;background:rgba(0,0,0,0.15);padding:4px;';
-      const ARMOR_LABEL: Record<string, string> = { helmet: 'HL', chestplate: 'CH', leggings: 'LG', boots: 'BT' };
-      ARMOR_TYPES.forEach((type, i) => {
-        const el = document.createElement('div');
-        styleSlotEl(el);
-        renderSlotContent(el, this.inventory.armorSlots[i]);
-        if (!this.inventory.armorSlots[i]) {
-          const placeholder = document.createElement('div');
-          placeholder.style.cssText = `position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:8px ${BODY_FONT};color:rgba(0,0,0,0.35);pointer-events:none;`;
-          placeholder.textContent = ARMOR_LABEL[type];
-          el.appendChild(placeholder);
-        }
-        el.addEventListener('click', () => {
-          soundEngine.uiClick();
-          this.onArmorSlotClick(i, false);
-        });
-        el.addEventListener('contextmenu', (e) => {
-          e.preventDefault();
-          soundEngine.uiClick();
-          this.onArmorSlotClick(i, true);
-        });
-        armorCol.appendChild(el);
-      });
-      characterPanel.appendChild(armorCol);
-      craftRow.appendChild(characterPanel);
-    }
+    if (!this.hasTable) craftRow.appendChild(this.buildCharacterPanel());
 
     const craftGridWidget = makeSlotGrid(this.craftGrid.length, this.craftGridSize, (i, r) => this.onCraftSlotClick(i, r));
     craftGridWidget.els.forEach((el, i) => renderSlotContent(el, this.craftGrid[i]));
@@ -439,6 +466,88 @@ export class GameUI {
     const hint = document.createElement('div');
     hint.style.cssText = `font-size:11px;opacity:0.75;font-family:${BODY_FONT};color:#333;`;
     hint.textContent = 'E / Esc zavřít · levé tlačítko sebrat/položit celý stack · pravé tlačítko polovinu';
+    panel.appendChild(hint);
+
+    this.screenRoot.appendChild(panel);
+    this.screenRoot.onclick = () => this.close();
+  }
+
+  /** Creative has no hand-crafting grid -- instead a tabbed item palette
+   * (matching vanilla's creative inventory) lets you click any item/block
+   * to get a full stack of it straight away. Storage/armor/hotbar stay the
+   * same widgets as survival so mob drops and equipped gear still work. */
+  private renderCreative() {
+    this.renderHeldCursor();
+    this.screenRoot.style.display = 'flex';
+    this.screenRoot.innerHTML = '';
+
+    const panel = document.createElement('div');
+    panel.style.cssText = panelStyle() + 'padding:16px;display:flex;flex-direction:column;gap:10px;width:400px;';
+    panel.addEventListener('click', (e) => e.stopPropagation());
+
+    const title = document.createElement('div');
+    title.textContent = 'Kreativní inventář';
+    title.style.cssText = `font-weight:bold;font-size:15px;font-family:${BODY_FONT};color:#222;`;
+    panel.appendChild(title);
+
+    const topRow = document.createElement('div');
+    topRow.style.cssText = 'display:flex;align-items:flex-start;gap:10px;';
+    topRow.appendChild(this.buildCharacterPanel());
+
+    const paletteCol = document.createElement('div');
+    paletteCol.style.cssText = 'display:flex;flex-direction:column;gap:4px;flex:1;';
+
+    const tabRow = document.createElement('div');
+    tabRow.style.cssText = 'display:flex;gap:2px;';
+    (Object.keys(CREATIVE_TAB_LABEL) as CreativeTab[]).forEach((tab) => {
+      const b = document.createElement('button');
+      b.textContent = CREATIVE_TAB_LABEL[tab];
+      b.style.cssText = buttonStyle('small') + `flex:1;padding:4px 2px;font-size:10px;${tab === this.creativeTab ? 'filter:brightness(1.3);' : ''}`;
+      attachButtonHover(b);
+      b.addEventListener('click', () => {
+        soundEngine.uiClick();
+        this.creativeTab = tab;
+        this.renderCreative();
+      });
+      tabRow.appendChild(b);
+    });
+    paletteCol.appendChild(tabRow);
+
+    const paletteGrid = document.createElement('div');
+    paletteGrid.style.cssText = 'display:grid;grid-template-columns:repeat(6,40px);gap:2px;background:rgba(0,0,0,0.15);padding:4px;max-height:180px;overflow-y:auto;';
+    for (const def of CREATIVE_ITEMS_BY_TAB[this.creativeTab]) {
+      const el = document.createElement('div');
+      styleSlotEl(el);
+      renderSlotContent(el, { itemId: def.id, count: 1 });
+      el.title = def.name;
+      el.addEventListener('click', () => {
+        soundEngine.uiClick();
+        this.giveItem(def.id, def.stackSize);
+        this.renderCreative();
+      });
+      paletteGrid.appendChild(el);
+    }
+    paletteCol.appendChild(paletteGrid);
+    topRow.appendChild(paletteCol);
+    panel.appendChild(topRow);
+
+    const storageGrid = makeSlotGrid(this.inventory.getStorage().length, 9, (i, r) => {
+      this.onInventorySlotClick(i + HOTBAR_SIZE, r);
+      this.renderCreative();
+    });
+    storageGrid.els.forEach((el, i) => renderSlotContent(el, this.inventory.getStorage()[i]));
+    panel.appendChild(storageGrid.root);
+
+    const hotbarGrid = makeSlotGrid(HOTBAR_SIZE, 9, (i, r) => {
+      this.onInventorySlotClick(i, r);
+      this.renderCreative();
+    });
+    hotbarGrid.els.forEach((el, i) => renderSlotContent(el, this.inventory.getHotbar()[i]));
+    panel.appendChild(hotbarGrid.root);
+
+    const hint = document.createElement('div');
+    hint.style.cssText = `font-size:11px;opacity:0.75;font-family:${BODY_FONT};color:#333;`;
+    hint.textContent = 'E / Esc zavřít · klikni na věc v paletě pro celý stack · nekonečné bloky, žádné poškození';
     panel.appendChild(hint);
 
     this.screenRoot.appendChild(panel);

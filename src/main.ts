@@ -10,6 +10,7 @@ import { HeldItemView } from './engine/mesh/heldItemView';
 import { GameUI } from './ui/gameUI';
 import { FurnaceManager } from './game/crafting/furnaceManager';
 import { SurvivalState } from './game/player/survival';
+import type { GameMode } from './game/player/gameMode';
 import { GameClock } from './game/time/gameClock';
 import { SurvivalHUD } from './ui/hud/survivalHUD';
 import { MobManager } from './game/entities/mobManager';
@@ -41,6 +42,7 @@ function footstepMaterialFor(blockId: number): FootstepMaterial {
 }
 
 function startGame(opts: PlayOptions) {
+  const gameMode: GameMode = opts.gameMode;
   const settings = loadSettings();
   soundEngine.ensureStarted();
   soundEngine.setVolumes(settings.masterVolume, settings.sfxVolume, settings.musicVolume);
@@ -71,7 +73,7 @@ function startGame(opts: PlayOptions) {
   player.controls.pointerSpeed = settings.mouseSensitivity;
   const SPAWN_POSITION = new THREE.Vector3(0.5, 90, 0.5);
 
-  const gameUI = new GameUI();
+  const gameUI = new GameUI(gameMode);
   const furnaceManager = new FurnaceManager();
   const survival = new SurvivalState();
   const clock = new GameClock(0.25);
@@ -101,6 +103,7 @@ function startGame(opts: PlayOptions) {
       createdAt: opts.existingSave?.createdAt ?? Date.now(),
       lastPlayedAt: Date.now(),
       gameTimeElapsed: clock.elapsed,
+      gameMode,
       player: {
         x: player.position.x,
         y: player.position.y,
@@ -142,6 +145,7 @@ function startGame(opts: PlayOptions) {
   /** Applies armor's flat damage-reduction (same formula as vanilla: -4%
    * damage per defense point, capped at 20 points / 80% reduction). */
   function applyDamage(amount: number) {
+    if (gameMode === 'creative') return;
     const defense = gameUI.inventory.getTotalDefense();
     const reduced = amount * (1 - Math.min(20, defense) * 0.04);
     survival.takeDamage(Math.max(0, reduced));
@@ -185,6 +189,13 @@ function startGame(opts: PlayOptions) {
   const crackOverlay = new CrackOverlay();
   scene.add(crackOverlay.mesh);
 
+  /** Creative mode has infinite blocks/items -- only survival consumes the
+   * stack that was just placed/used/turned into a bucket. */
+  function consumeSelected(count = 1) {
+    if (gameMode === 'creative') return;
+    gameUI.inventory.removeFromSlot(gameUI.inventory.selectedHotbarIndex, count);
+  }
+
   let leftMouseDown = false;
   let miningTarget: { x: number; y: number; z: number } | null = null;
   let miningProgress = 0;
@@ -207,6 +218,8 @@ function startGame(opts: PlayOptions) {
     chunkManager.setBlock(x, y, z, BlockId.Air);
     soundEngine.breakBlock();
     if (brokenId === BlockId.Furnace) furnaceManager.remove(x, y, z);
+
+    if (gameMode === 'creative') return; // block just vanishes: no drop, no tool wear (matches vanilla creative)
 
     const blockDef = getBlockDef(brokenId);
     const heldId = gameUI.selectedItemId;
@@ -311,7 +324,7 @@ function startGame(opts: PlayOptions) {
       knockback.normalize().multiplyScalar(3);
       currentMobHit.takeDamage(damage, knockback);
       soundEngine.hit();
-      if (heldItemDef?.maxDurability) gameUI.damageSelectedTool();
+      if (heldItemDef?.maxDurability && gameMode === 'survival') gameUI.damageSelectedTool();
       return;
     }
 
@@ -353,7 +366,7 @@ function startGame(opts: PlayOptions) {
           const fluidId = chunkManager.getBlock(fluidHit.x, fluidHit.y, fluidHit.z);
           if (fluidId === BlockId.Water || fluidId === BlockId.Lava) {
             chunkManager.setBlock(fluidHit.x, fluidHit.y, fluidHit.z, BlockId.Air);
-            gameUI.inventory.removeFromSlot(gameUI.inventory.selectedHotbarIndex, 1);
+            consumeSelected();
             gameUI.inventory.addItem(fluidId === BlockId.Water ? 'water_bucket' : 'lava_bucket', 1);
             gameUI.refreshHotbar();
             soundEngine.placeBlock();
@@ -367,16 +380,16 @@ function startGame(opts: PlayOptions) {
         const py = currentHit.y + ny;
         const pz = currentHit.z + nz;
         chunkManager.setBlock(px, py, pz, heldId === 'water_bucket' ? BlockId.Water : BlockId.Lava);
-        gameUI.inventory.removeFromSlot(gameUI.inventory.selectedHotbarIndex, 1);
+        consumeSelected();
         gameUI.inventory.addItem('bucket', 1);
         gameUI.refreshHotbar();
         soundEngine.placeBlock();
         return;
       }
 
-      if (itemDef.foodRestore && survival.hunger < survival.maxHunger) {
+      if (gameMode === 'survival' && itemDef.foodRestore && survival.hunger < survival.maxHunger) {
         survival.eat(itemDef.foodRestore);
-        gameUI.inventory.removeFromSlot(gameUI.inventory.selectedHotbarIndex, 1);
+        consumeSelected();
         gameUI.refreshHotbar();
         return;
       }
@@ -394,7 +407,7 @@ function startGame(opts: PlayOptions) {
       if (!insidePlayer) {
         chunkManager.setBlock(px, py, pz, itemDef.blockId);
         soundEngine.placeBlock();
-        gameUI.inventory.removeFromSlot(gameUI.inventory.selectedHotbarIndex, 1);
+        consumeSelected();
         gameUI.refreshHotbar();
       }
     }
@@ -460,13 +473,15 @@ function startGame(opts: PlayOptions) {
     if (player.isLocked && !gameUI.isOpen && !survival.dead) {
       player.update(dt, (x, y, z) => chunkManager.isSolid(x, y, z), (x, y, z) => chunkManager.getBlock(x, y, z));
       chunkManager.setCenter(player.position.x, player.position.z);
-      if (player.fallDamageThisFrame > 0) {
-        applyDamage(player.fallDamageThisFrame);
-        soundEngine.damage();
+      if (gameMode === 'survival') {
+        if (player.fallDamageThisFrame > 0) {
+          applyDamage(player.fallDamageThisFrame);
+          soundEngine.damage();
+        }
+        survival.update(dt, player.sprinting);
+        survival.updateBreath(dt, player.headUnderwater);
+        if (player.inLava) applyDamage(dt * 4);
       }
-      survival.update(dt, player.sprinting);
-      survival.updateBreath(dt, player.headUnderwater);
-      if (player.inLava) applyDamage(dt * 4);
 
       if (player.grounded && !player.inWater) {
         const dx = player.position.x - lastFootstepPos.x;
@@ -481,7 +496,7 @@ function startGame(opts: PlayOptions) {
       }
     }
     if (survival.dead && player.isLocked) player.controls.unlock();
-    survivalHUD.update(survival);
+    survivalHUD.update(survival, gameMode);
 
     if (!gameUI.isOpen && !survival.dead) {
       mobManager.tick(
@@ -542,7 +557,7 @@ function startGame(opts: PlayOptions) {
       const blockDef = getBlockDef(blockId);
       const heldId = gameUI.selectedItemId;
       const heldItemDef = heldId ? getItemDef(heldId) : null;
-      const required = miningSeconds(blockDef, heldItemDef);
+      const required = gameMode === 'creative' ? (blockDef.hardness === Infinity ? Infinity : 0) : miningSeconds(blockDef, heldItemDef);
       if (required === Infinity) {
         miningProgress = 0;
         miningBarOuter.style.display = 'none';
