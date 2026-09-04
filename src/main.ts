@@ -642,9 +642,15 @@ function startGame(opts: PlayOptions) {
   const DROP_MAX_AGE = 120; // despawn after 2 minutes, same idea as vanilla's 5-minute item timeout
 
   function spawnItemDrop(bx: number, by: number, bz: number, itemId: string, count: number) {
-    const mat = new THREE.SpriteMaterial({ map: getDropIconTexture(itemId), transparent: true });
+    const mat = new THREE.SpriteMaterial({ map: getDropIconTexture(itemId), transparent: true, depthTest: true });
     const sprite = new THREE.Sprite(mat);
-    sprite.scale.set(0.35, 0.35, 1);
+    // Small on purpose -- a dropped item on the ground should read as a
+    // little token you walk over to collect, not something you can't miss
+    // from across the room. Since a sprite is a camera-facing billboard,
+    // one spawned close to the player (breaking a block right in front of
+    // you) will still look larger up close purely from perspective -- that
+    // part is expected, same as any nearby object.
+    sprite.scale.set(0.22, 0.22, 1);
     sprite.position.set(bx + 0.5 + (Math.random() - 0.5) * 0.4, by + 0.4, bz + 0.5 + (Math.random() - 0.5) * 0.4);
     scene.add(sprite);
     itemDrops.push({
