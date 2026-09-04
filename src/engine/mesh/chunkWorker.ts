@@ -33,6 +33,7 @@ function typed(buffers: MeshBuffers) {
     uvs: new Float32Array(buffers.uvs),
     colors: new Float32Array(buffers.colors),
     indices: new Uint32Array(buffers.indices),
+    sway: new Float32Array(buffers.sway),
   };
 }
 
@@ -70,8 +71,8 @@ function handleMessage(msg: InMessage) {
     const lightCopy = light.slice();
 
     const transfer: Transferable[] = [
-      opaqueT.positions.buffer, opaqueT.normals.buffer, opaqueT.uvs.buffer, opaqueT.colors.buffer, opaqueT.indices.buffer,
-      transparentT.positions.buffer, transparentT.normals.buffer, transparentT.uvs.buffer, transparentT.colors.buffer, transparentT.indices.buffer,
+      opaqueT.positions.buffer, opaqueT.normals.buffer, opaqueT.uvs.buffer, opaqueT.colors.buffer, opaqueT.indices.buffer, opaqueT.sway.buffer,
+      transparentT.positions.buffer, transparentT.normals.buffer, transparentT.uvs.buffer, transparentT.colors.buffer, transparentT.indices.buffer, transparentT.sway.buffer,
       blocksCopy.buffer,
       lightCopy.buffer,
     ];

@@ -16,6 +16,7 @@ import { SurvivalHUD } from './ui/hud/survivalHUD';
 import { MobManager } from './game/entities/mobManager';
 import type { Mob } from './game/entities/mob';
 import { Arrow } from './game/entities/projectile';
+import { updateSwayTime } from './engine/mesh/blockMaterials';
 import { MainMenu, PlayOptions, renderSettingsPanel } from './ui/mainMenu';
 import { TITLE_FONT, BODY_FONT, logoTextShadow, buttonStyle, attachButtonHover, panelStyle } from './ui/pixelStyle';
 import { LoadingScreen } from './ui/loadingScreen';
@@ -25,6 +26,9 @@ import { soundEngine, FootstepMaterial } from './audio/soundEngine';
 import type { Slot } from './game/player/inventory';
 
 const app = document.getElementById('app')!;
+
+const SUN_DAY_COLOR = new THREE.Color(0xffffff);
+const SUN_WARM_COLOR = new THREE.Color(0xffa552); // low-elevation (sunrise/sunset) tint
 
 const FOOTSTEP_MATERIAL: Record<string, FootstepMaterial> = {
   grass_block: 'grass', tall_grass: 'grass',
@@ -60,6 +64,18 @@ function startGame(opts: PlayOptions) {
 
   const heldItemView = new HeldItemView();
   camera.add(heldItemView.mesh);
+
+  // Real dynamic lighting: the mesher has always emitted proper face normals
+  // (see culledMesher.ts), they just went unused under the old MeshBasicMaterial.
+  // The sun tracks GameClock's already-computed sunDirection every frame
+  // below; hemiLight is a cheap always-on sky/ground fill so shadowed faces
+  // never go pure black (the baked per-face vertex shading still supplies
+  // the Minecraft-style AO/light-level base on top of this).
+  const sunLight = new THREE.DirectionalLight(0xffffff, 0.9);
+  scene.add(sunLight);
+  scene.add(sunLight.target);
+  const hemiLight = new THREE.HemisphereLight(0x87ceeb, 0x3a2f1a, 0.55);
+  scene.add(hemiLight);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -469,6 +485,7 @@ function startGame(opts: PlayOptions) {
   let lastFootstepPos = player.position.clone();
   let loadingDone = false;
   let lastTime = performance.now();
+  let elapsedTime = 0; // free-running seconds for the wind/wave shader (never wraps, unlike clock.elapsed)
 
   function animate() {
     requestAnimationFrame(animate);
@@ -496,6 +513,22 @@ function startGame(opts: PlayOptions) {
     (scene.background as THREE.Color).copy(sky.skyColor);
     (scene.fog as THREE.Fog).color.copy(sky.fogColor);
     nightOverlay.style.opacity = String(sky.ambientDarkness * 0.45);
+
+    // Sun follows the day/night cycle's already-computed direction; it only
+    // actually lights the world while above the horizon (elevation > 0) --
+    // below that, moonlit visibility comes from hemiLight + the baked block
+    // light in vertex colors, same as before this lighting pass existed.
+    const elevation = Math.max(0, sky.sunDirection.y);
+    sunLight.position.copy(camera.position).addScaledVector(sky.sunDirection, 200);
+    sunLight.target.position.copy(camera.position);
+    sunLight.intensity = elevation * 1.1;
+    const warmth = THREE.MathUtils.clamp(1 - elevation * 2.2, 0, 1);
+    sunLight.color.copy(SUN_DAY_COLOR).lerp(SUN_WARM_COLOR, warmth);
+    hemiLight.intensity = 0.32 + (1 - sky.ambientDarkness) * 0.28;
+    hemiLight.color.copy(sky.skyColor);
+
+    elapsedTime += dt;
+    updateSwayTime(elapsedTime);
 
     if (player.isLocked && !gameUI.isOpen && !survival.dead) {
       player.update(dt, (x, y, z) => chunkManager.isSolid(x, y, z), (x, y, z) => chunkManager.getBlock(x, y, z));
