@@ -328,6 +328,14 @@ function startGame(opts: PlayOptions) {
       return;
     }
 
+    if (e.button === 2 && currentMobHit && currentMobHit.config.kind === 'sheep' && gameUI.selectedItemId === 'shears') {
+      // Shear a sheep instead of killing it for wool -- doesn't touch its HP.
+      gameUI.giveItem('wool', 1 + Math.floor(Math.random() * 3));
+      soundEngine.placeBlock();
+      if (gameMode === 'survival') gameUI.damageSelectedTool();
+      return;
+    }
+
     if (!currentHit) return;
 
     if (e.button === 0) {

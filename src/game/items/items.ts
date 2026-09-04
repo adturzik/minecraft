@@ -1,8 +1,8 @@
 import { BlockId, ToolTier, ToolType, RawBlockDef, getRawBlockDef, RAW_BLOCKS } from './blockDefs';
 
-// Items need a couple of tool kinds (sword, hoe) that never gate block
-// harvesting and so were deliberately left out of blockDefs.ToolType.
-export type ItemToolType = ToolType | 'sword' | 'hoe';
+// Items need a couple of tool kinds (sword, hoe, shears) that never gate
+// block harvesting and so were deliberately left out of blockDefs.ToolType.
+export type ItemToolType = ToolType | 'sword' | 'hoe' | 'shears';
 
 export type ArmorType = 'helmet' | 'chestplate' | 'leggings' | 'boots';
 export type ArmorTier = 'leather' | 'iron' | 'gold' | 'diamond';
@@ -116,6 +116,9 @@ const NON_BLOCK_ITEMS: ItemDef[] = [
   { id: 'golden_apple', name: 'Golden Apple', stackSize: 64, color: [240, 210, 60], foodRestore: 9 },
   // Buckets: empty bucket picks up a water/lava source (right-click a fluid
   // block); a filled bucket places it back and empties. See main.ts.
+  // Right-click a sheep to collect wool without hurting it (main.ts) --
+  // its own tool type, matching vanilla, so it doesn't gate any block.
+  { id: 'shears', name: 'Shears', stackSize: 1, color: [190, 190, 195], toolType: 'shears', maxDurability: 238 },
   { id: 'bucket', name: 'Bucket', stackSize: 16, color: [190, 190, 195] },
   { id: 'water_bucket', name: 'Water Bucket', stackSize: 1, color: [60, 110, 220] },
   { id: 'lava_bucket', name: 'Lava Bucket', stackSize: 1, color: [220, 90, 20] },

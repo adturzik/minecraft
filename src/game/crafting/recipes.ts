@@ -186,6 +186,13 @@ export const RECIPES: Recipe[] = [
     result: { itemId: 'bucket', count: 1 },
   },
   {
+    id: 'shears',
+    type: 'shaped',
+    requiresTable: false,
+    pattern: [[null, 'iron_ingot'], ['iron_ingot', null]],
+    result: { itemId: 'shears', count: 1 },
+  },
+  {
     id: 'golden_apple',
     type: 'shaped',
     requiresTable: true,
