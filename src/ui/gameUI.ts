@@ -27,11 +27,62 @@ function itemCategory(def: ItemDef): CreativeTab {
 const CREATIVE_ITEMS_BY_TAB: Record<CreativeTab, ItemDef[]> = { blocks: [], tools: [], combat: [], food: [], materials: [] };
 for (const def of ITEMS) CREATIVE_ITEMS_BY_TAB[itemCategory(def)].push(def);
 
+// One shared floating tooltip element for every item slot in the game --
+// hotbar, inventory, crafting, furnace, armor, and the creative palette all
+// funnel through renderSlotContent/styleSlotEl below, so wiring it there
+// covers every screen at once instead of once per widget.
+let tooltipEl: HTMLDivElement | null = null;
+function getTooltipEl(): HTMLDivElement {
+  if (tooltipEl) return tooltipEl;
+  tooltipEl = document.createElement('div');
+  tooltipEl.style.cssText = `position:fixed;pointer-events:none;z-index:1800;${panelStyle()}padding:4px 8px;font:12px ${BODY_FONT};color:#fff;white-space:nowrap;display:none;`;
+  document.body.appendChild(tooltipEl);
+  return tooltipEl;
+}
+function positionTooltip(e: MouseEvent) {
+  const el = getTooltipEl();
+  el.style.left = `${e.clientX + 14}px`;
+  el.style.top = `${e.clientY + 14}px`;
+}
+function hideTooltip() {
+  if (tooltipEl) tooltipEl.style.display = 'none';
+}
+
+/** Small pop-in transition for a freshly (re)built screen panel -- every
+ * inventory/crafting/furnace render() call rebuilds screenRoot from scratch,
+ * so this runs once per open/tab-switch rather than being a persistent
+ * animation. */
+function animateIn(panel: HTMLDivElement) {
+  panel.style.transition = 'opacity 0.1s ease-out, transform 0.1s ease-out';
+  panel.style.opacity = '0';
+  panel.style.transform = 'scale(0.96)';
+  requestAnimationFrame(() => {
+    panel.style.opacity = '1';
+    panel.style.transform = 'scale(1)';
+  });
+}
+
+type SlotEl = HTMLDivElement & { _slotItem?: Slot };
+
 function styleSlotEl(el: HTMLDivElement, size = 40) {
   el.style.cssText = slotStyle(size) + 'cursor:pointer;user-select:none;';
+  el.addEventListener('mouseenter', (e) => {
+    const slot = (el as SlotEl)._slotItem;
+    if (!slot) return;
+    const def = getItemDef(slot.itemId);
+    const tip = getTooltipEl();
+    tip.textContent = def.name;
+    tip.style.display = 'block';
+    positionTooltip(e as MouseEvent);
+  });
+  el.addEventListener('mousemove', (e) => {
+    if ((el as SlotEl)._slotItem) positionTooltip(e as MouseEvent);
+  });
+  el.addEventListener('mouseleave', hideTooltip);
 }
 
 function renderSlotContent(el: HTMLDivElement, slot: Slot) {
+  (el as SlotEl)._slotItem = slot;
   // keep the sunken slot bevel, only replace the item content underneath
   const existing = el.querySelector('.slot-content');
   if (existing) existing.remove();
@@ -272,6 +323,7 @@ export class GameUI {
   private close() {
     this.screenOpen = false;
     this.screenRoot.style.display = 'none';
+    hideTooltip();
     this.returnCraftGridToInventory();
     // Whatever's still picked up on the cursor (e.g. a just-crafted item)
     // has to go back into the inventory here too — otherwise closing the
@@ -469,6 +521,7 @@ export class GameUI {
     panel.appendChild(hint);
 
     this.screenRoot.appendChild(panel);
+    animateIn(panel);
     this.screenRoot.onclick = () => this.close();
   }
 
@@ -519,7 +572,6 @@ export class GameUI {
       const el = document.createElement('div');
       styleSlotEl(el);
       renderSlotContent(el, { itemId: def.id, count: 1 });
-      el.title = def.name;
       el.addEventListener('click', () => {
         soundEngine.uiClick();
         this.giveItem(def.id, def.stackSize);
@@ -551,6 +603,7 @@ export class GameUI {
     panel.appendChild(hint);
 
     this.screenRoot.appendChild(panel);
+    animateIn(panel);
     this.screenRoot.onclick = () => this.close();
   }
 
@@ -632,6 +685,7 @@ export class GameUI {
     panel.appendChild(hint);
 
     this.screenRoot.appendChild(panel);
+    animateIn(panel);
     this.screenRoot.onclick = () => this.close();
   }
 }

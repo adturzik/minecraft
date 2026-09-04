@@ -32,6 +32,36 @@ const SPLASH_TEXTS = [
   'Vyrobeno v Claude Code!',
 ];
 
+let cloudKeyframesInjected = false;
+function ensureCloudKeyframes() {
+  if (cloudKeyframesInjected) return;
+  cloudKeyframesInjected = true;
+  const style = document.createElement('style');
+  style.textContent = '@keyframes drift-cloud { from { transform: translateX(-140px); } to { transform: translateX(115vw); } }';
+  document.head.appendChild(style);
+}
+
+/** Blocky drifting clouds behind the menu content -- same voxel-silhouette
+ * language as the rest of the game's art (flat rectangles, no soft blur)
+ * instead of a static gradient sky, so the menu doesn't feel frozen. */
+function buildDriftingClouds(): HTMLDivElement {
+  ensureCloudKeyframes();
+  const layer = document.createElement('div');
+  layer.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0;';
+  for (let i = 0; i < 5; i++) {
+    const scale = 0.7 + Math.random() * 0.9;
+    const top = 4 + Math.random() * 38;
+    const duration = 45 + Math.random() * 35;
+    const cloud = document.createElement('div');
+    cloud.style.cssText = `position:absolute;top:${top}%;left:0;width:${90 * scale}px;height:${34 * scale}px;opacity:0.85;animation:drift-cloud ${duration}s linear ${-Math.random() * duration}s infinite;`;
+    const part = (x: number, y: number, w: number, h: number) =>
+      `<div style="position:absolute;left:${x * scale}px;top:${y * scale}px;width:${w * scale}px;height:${h * scale}px;background:#fff;"></div>`;
+    cloud.innerHTML = part(18, 0, 54, 14) + part(0, 10, 90, 18) + part(8, -8, 30, 12);
+    layer.appendChild(cloud);
+  }
+  return layer;
+}
+
 function btn(label: string, onClick: () => void, size: 'normal' | 'small' = 'normal'): HTMLButtonElement {
   const b = document.createElement('button');
   b.textContent = label;
@@ -118,8 +148,9 @@ export class MainMenu {
 
   private clear(): HTMLDivElement {
     this.root.innerHTML = '';
+    this.root.appendChild(buildDriftingClouds());
     const content = document.createElement('div');
-    content.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:14px;margin-top:8%;';
+    content.style.cssText = 'position:relative;display:flex;flex-direction:column;align-items:center;gap:14px;margin-top:8%;';
     this.root.appendChild(content);
 
     const version = document.createElement('div');
