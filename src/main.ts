@@ -15,6 +15,7 @@ import { GameClock } from './game/time/gameClock';
 import { SurvivalHUD } from './ui/hud/survivalHUD';
 import { MobManager } from './game/entities/mobManager';
 import type { Mob } from './game/entities/mob';
+import { Arrow } from './game/entities/projectile';
 import { MainMenu, PlayOptions, renderSettingsPanel } from './ui/mainMenu';
 import { TITLE_FONT, BODY_FONT, logoTextShadow, buttonStyle, attachButtonHover, panelStyle } from './ui/pixelStyle';
 import { LoadingScreen } from './ui/loadingScreen';
@@ -189,6 +190,8 @@ function startGame(opts: PlayOptions) {
   const crackOverlay = new CrackOverlay();
   scene.add(crackOverlay.mesh);
 
+  const arrows: Arrow[] = [];
+
   /** Creative mode has infinite blocks/items -- only survival consumes the
    * stack that was just placed/used/turned into a bucket. */
   function consumeSelected(count = 1) {
@@ -333,6 +336,22 @@ function startGame(opts: PlayOptions) {
       gameUI.giveItem('wool', 1 + Math.floor(Math.random() * 3));
       soundEngine.placeBlock();
       if (gameMode === 'survival') gameUI.damageSelectedTool();
+      return;
+    }
+
+    if (e.button === 2 && gameUI.selectedItemId === 'bow') {
+      // Bow draws its ammo from anywhere in the inventory, not just the
+      // selected slot (matches vanilla) -- creative never runs out.
+      if (gameMode === 'creative' || gameUI.inventory.removeItem('arrow', 1)) {
+        const dir = new THREE.Vector3();
+        camera.getWorldDirection(dir);
+        const origin = camera.position.clone().addScaledVector(dir, 0.6);
+        const arrow = new Arrow(origin, dir);
+        scene.add(arrow.mesh);
+        arrows.push(arrow);
+        soundEngine.placeBlock();
+        if (gameMode === 'survival') gameUI.damageSelectedTool();
+      }
       return;
     }
 
@@ -528,6 +547,20 @@ function startGame(opts: PlayOptions) {
           }
         }
       );
+    }
+
+    for (let i = arrows.length - 1; i >= 0; i--) {
+      const arrow = arrows[i];
+      arrow.update(dt, (x, y, z) => chunkManager.isSolid(x, y, z), mobManager.getMobs(), (mob, velocity) => {
+        const knockback = velocity.clone().normalize().multiplyScalar(2.5);
+        knockback.y = 0.2;
+        mob.takeDamage(5, knockback);
+        soundEngine.hit();
+      });
+      if (arrow.dead) {
+        scene.remove(arrow.mesh);
+        arrows.splice(i, 1);
+      }
     }
 
     const dir = new THREE.Vector3();

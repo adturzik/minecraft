@@ -81,6 +81,30 @@ export class Inventory {
     if (s.count <= 0) this.slots[index] = null;
   }
 
+  hasItem(itemId: string, count = 1): boolean {
+    let total = 0;
+    for (const s of this.slots) if (s && s.itemId === itemId) total += s.count;
+    return total >= count;
+  }
+
+  /** Removes up to `count` of itemId from anywhere in the inventory (used by
+   * the bow, which draws its ammo from the whole inventory, not just the
+   * selected hotbar slot). Returns false (no-op) if there isn't enough. */
+  removeItem(itemId: string, count: number): boolean {
+    if (!this.hasItem(itemId, count)) return false;
+    let remaining = count;
+    for (let i = 0; i < this.slots.length && remaining > 0; i++) {
+      const s = this.slots[i];
+      if (s && s.itemId === itemId) {
+        const take = Math.min(s.count, remaining);
+        s.count -= take;
+        remaining -= take;
+        if (s.count <= 0) this.slots[i] = null;
+      }
+    }
+    return true;
+  }
+
   /** Click-to-hold-then-place slot interaction (same model as vanilla MC):
    * pass the currently-held stack and the clicked slot's contents, get back
    * the new held stack and the new slot contents. `splitHalf` = right-click. */

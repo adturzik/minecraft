@@ -100,6 +100,9 @@ const NON_BLOCK_ITEMS: ItemDef[] = [
   { id: 'bone', name: 'Bone', stackSize: 64, color: [235, 225, 200] },
   { id: 'string', name: 'String', stackSize: 64, color: [230, 230, 220] },
   { id: 'gunpowder', name: 'Gunpowder', stackSize: 64, color: [90, 90, 95] },
+  { id: 'flint', name: 'Flint', stackSize: 64, color: [60, 60, 65] },
+  { id: 'bow', name: 'Bow', stackSize: 1, color: [150, 110, 60], maxDurability: 384 },
+  { id: 'arrow', name: 'Arrow', stackSize: 64, color: [150, 150, 150] },
   { id: 'emerald', name: 'Emerald', stackSize: 64, color: [40, 200, 110] },
   // Dyes: each has a real in-world source (see recipes.ts) rather than being
   // a dead-end item with no way to obtain it.
@@ -220,6 +223,9 @@ const LEAF_BLOCKS = new Set([BlockId.OakLeaves, BlockId.BirchLeaves, BlockId.Spr
 export function blockDropItemId(blockId: number): string | null {
   if (blockId === BlockId.Air) return null;
   if (LEAF_BLOCKS.has(blockId) && Math.random() < 0.08) return 'apple';
+  // Matches vanilla: gravel has a chance to yield flint instead of itself --
+  // otherwise flint (needed for arrows) would have no source at all.
+  if (blockId === BlockId.Gravel && Math.random() < 0.1) return 'flint';
   const raw = getRawBlockDef(blockId);
   return raw.drop ?? raw.key;
 }

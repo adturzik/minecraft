@@ -275,6 +275,35 @@ function shearsShape(ctx: CanvasRenderingContext2D, color: RGB) {
   px(ctx, 9, 11, 3, 2, HANDLE);
 }
 
+function bowShape(ctx: CanvasRenderingContext2D, color: RGB) {
+  const string: RGB = [230, 230, 220];
+  const cells: [number, number][] = [
+    [9, 2], [10, 2],
+    [8, 3], [11, 3],
+    [7, 4],
+    [7, 5],
+    [7, 6],
+    [8, 7], [11, 7],
+    [9, 8], [10, 8],
+  ];
+  for (const [x, y] of cells) px(ctx, x, y, 1, 1, color);
+  ctx.strokeStyle = css(string);
+  ctx.beginPath();
+  ctx.moveTo(9.5, 2.5);
+  ctx.lineTo(4, 7);
+  ctx.lineTo(9.5, 11.5);
+  ctx.stroke();
+}
+
+function arrowShape(ctx: CanvasRenderingContext2D) {
+  const shaft: RGB = [150, 110, 60];
+  const head: RGB = [190, 190, 195];
+  const fletch: RGB = [210, 40, 40];
+  px(ctx, 2, 11, 2, 2, fletch);
+  for (let i = 0; i < 9; i++) px(ctx, 4 + i, 10 - i, 1, 1, shaft);
+  px(ctx, 11, 3, 2, 2, head);
+}
+
 function helmetShape(ctx: CanvasRenderingContext2D, color: RGB) {
   const dark = shade(color, -30);
   px(ctx, 4, 3, 8, 1, color);
@@ -332,6 +361,16 @@ const ARMOR_SHAPE: Record<string, (ctx: CanvasRenderingContext2D, color: RGB) =>
 const EXPLICIT_SHAPE: Record<string, (ctx: CanvasRenderingContext2D, color: RGB) => void> = {
   stick: stickShape,
   shears: shearsShape,
+  bow: bowShape,
+  arrow: arrowShape,
+  flint: (ctx, color) => {
+    const dark = shade(color, -30);
+    const light = shade(color, 30);
+    px(ctx, 5, 3, 2, 1, light);
+    px(ctx, 4, 4, 6, 6, color);
+    px(ctx, 5, 10, 4, 1, dark);
+    px(ctx, 4, 4, 1, 6, dark);
+  },
   bone: boneShape,
   feather: featherShape,
   string: stringShape,
