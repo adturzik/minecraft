@@ -110,7 +110,7 @@ function toolRecipes(): ShapedRecipe[] {
     const mat = TOOL_TIER_MATERIAL[tier];
     const id = (type: string) => `${tier}_${type}`;
     out.push(
-      { id: `craft_${id('pickaxe')}`, type: 'shaped', requiresTable: true, result: { itemId: id('pickaxe'), count: 1 }, pattern: [[mat, mat, mat], ['stick', null, 'stick'], [null, 'stick', null]] },
+      { id: `craft_${id('pickaxe')}`, type: 'shaped', requiresTable: true, result: { itemId: id('pickaxe'), count: 1 }, pattern: [[mat, mat, mat], [null, 'stick', null], [null, 'stick', null]] },
       { id: `craft_${id('axe')}`, type: 'shaped', requiresTable: true, result: { itemId: id('axe'), count: 1 }, pattern: [[mat, mat], [mat, 'stick'], [null, 'stick']] },
       { id: `craft_${id('shovel')}`, type: 'shaped', requiresTable: false, result: { itemId: id('shovel'), count: 1 }, pattern: [[mat], ['stick'], ['stick']] },
       { id: `craft_${id('sword')}`, type: 'shaped', requiresTable: false, result: { itemId: id('sword'), count: 1 }, pattern: [[mat], [mat], ['stick']] },
