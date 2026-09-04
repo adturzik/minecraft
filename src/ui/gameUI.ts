@@ -96,7 +96,7 @@ function renderSlotContent(el: HTMLDivElement, slot: Slot) {
   // Icon art is drawn on a transparent canvas and already carries its own
   // color, so the slot backdrop stays neutral -- an opaque same-color fill
   // here used to sit right behind it and swallow the shape entirely.
-  swatch.style.cssText = `position:absolute;inset:3px;${bevel('raised', 1)}box-sizing:border-box;image-rendering:pixelated;background-image:url(${itemIconUrl(def)});background-size:contain;background-repeat:no-repeat;background-position:center;`;
+  swatch.style.cssText = `position:absolute;inset:3px;${bevel('raised', 1)}box-sizing:border-box;image-rendering:auto;background-image:url(${itemIconUrl(def)});background-size:contain;background-repeat:no-repeat;background-position:center;`;
   content.appendChild(swatch);
 
   if (slot.count > 1) {
@@ -187,7 +187,7 @@ function buildCharacterPreview(inventory: Inventory): HTMLDivElement {
   if (heldStack) {
     const def = getItemDef(heldStack.itemId);
     const hand = document.createElement('div');
-    hand.style.cssText = `position:absolute;left:60px;top:66px;width:16px;height:16px;box-shadow:0 0 0 1px #000;image-rendering:pixelated;background-image:url(${itemIconUrl(def)});background-size:cover;`;
+    hand.style.cssText = `position:absolute;left:60px;top:66px;width:16px;height:16px;box-shadow:0 0 0 1px #000;image-rendering:auto;background-image:url(${itemIconUrl(def)});background-size:cover;`;
     stage.appendChild(hand);
   }
 
@@ -434,7 +434,7 @@ export class GameUI {
     if (this.held) {
       this.heldCursorEl.style.display = 'block';
       const def = getItemDef(this.held.itemId);
-      this.heldCursorEl.innerHTML = `<div style="width:100%;height:100%;background:${STONE};${bevel('raised', 1)}box-shadow:0 0 0 1px #000;box-sizing:border-box;image-rendering:pixelated;background-image:url(${itemIconUrl(def)});background-size:contain;background-repeat:no-repeat;background-position:center;display:flex;align-items:flex-end;justify-content:flex-end;font:bold 11px ${BODY_FONT};color:#fff;text-shadow:1px 1px 0 #000;"><span style="margin:2px;">${this.held.count > 1 ? this.held.count : ''}</span></div>`;
+      this.heldCursorEl.innerHTML = `<div style="width:100%;height:100%;background:${STONE};${bevel('raised', 1)}box-shadow:0 0 0 1px #000;box-sizing:border-box;image-rendering:auto;background-image:url(${itemIconUrl(def)});background-size:contain;background-repeat:no-repeat;background-position:center;display:flex;align-items:flex-end;justify-content:flex-end;font:bold 11px ${BODY_FONT};color:#fff;text-shadow:1px 1px 0 #000;"><span style="margin:2px;">${this.held.count > 1 ? this.held.count : ''}</span></div>`;
     } else {
       this.heldCursorEl.style.display = 'none';
     }

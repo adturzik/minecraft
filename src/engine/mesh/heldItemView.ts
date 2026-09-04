@@ -13,8 +13,8 @@ function getIconTexture(itemId: string): THREE.Texture {
   if (tex) return tex;
   const img = new Image();
   tex = new THREE.Texture(img);
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearFilter;
   tex.generateMipmaps = false;
   img.onload = () => {
     tex!.needsUpdate = true;

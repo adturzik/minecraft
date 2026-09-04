@@ -12,14 +12,48 @@ import { atlasBuilder, TILE_SIZE, ATLAS_SIZE } from '../engine/mesh/textureAtlas
 import type { ItemDef } from '../game/items/items';
 
 const ICON_SIZE = 16;
+// Icons are drawn at their native 16x16 pixel-art resolution, then upscaled
+// 4x with a soft drop shadow and a diagonal glossy light pass laid over the
+// icon's own silhouette -- turns flat pixel shapes into small "beveled
+// plastic/metal" items without having to redraw every shape function.
+const OUTPUT_SIZE = ICON_SIZE * 4;
 const cache = new Map<string, string>();
 
 function toDataUrl(draw: (ctx: CanvasRenderingContext2D) => void): string {
+  const inner = document.createElement('canvas');
+  inner.width = inner.height = ICON_SIZE;
+  const innerCtx = inner.getContext('2d')!;
+  innerCtx.imageSmoothingEnabled = false;
+  draw(innerCtx);
+
   const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = ICON_SIZE;
+  canvas.width = canvas.height = OUTPUT_SIZE;
   const ctx = canvas.getContext('2d')!;
   ctx.imageSmoothingEnabled = false;
-  draw(ctx);
+
+  // Soft ambient shadow: a blurred, slightly-offset copy of the icon sitting
+  // underneath it.
+  ctx.save();
+  ctx.filter = 'blur(2px)';
+  ctx.globalAlpha = 0.4;
+  ctx.drawImage(inner, 0, 2, OUTPUT_SIZE, OUTPUT_SIZE);
+  ctx.restore();
+
+  // Crisp upscaled icon on top.
+  ctx.drawImage(inner, 0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
+
+  // Directional gloss, masked to the icon's own drawn pixels (source-atop)
+  // so it reads as a highlight/shade on the object rather than a full-frame
+  // overlay.
+  ctx.globalCompositeOperation = 'source-atop';
+  const gloss = ctx.createLinearGradient(0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
+  gloss.addColorStop(0, 'rgba(255,255,255,0.38)');
+  gloss.addColorStop(0.45, 'rgba(255,255,255,0.04)');
+  gloss.addColorStop(1, 'rgba(0,0,0,0.26)');
+  ctx.fillStyle = gloss;
+  ctx.fillRect(0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
+  ctx.globalCompositeOperation = 'source-over';
+
   return canvas.toDataURL();
 }
 

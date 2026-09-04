@@ -22,29 +22,39 @@ export function bevel(mode: 'raised' | 'sunken', width = 2): string {
 }
 
 export function panelStyle(): string {
-  return `background:${PANEL_BG};${bevel('raised', 3)}box-shadow:0 0 0 3px #000, 6px 6px 0 rgba(0,0,0,0.35);box-sizing:border-box;`;
+  return `background:linear-gradient(155deg, #d6d6d6 0%, ${PANEL_BG} 55%, #a8a8a8 100%);${bevel('raised', 3)}border-radius:5px;box-shadow:0 0 0 3px #000, 0 10px 28px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.25);box-sizing:border-box;`;
 }
 
 export function buttonStyle(size: 'normal' | 'small' = 'normal'): string {
   const pad = size === 'small' ? '6px 12px' : '11px 22px';
   const font = size === 'small' ? '12px' : '15px';
-  return `background:${STONE};${bevel('raised', 2)}box-shadow:0 0 0 2px #000;color:#fff;font-family:${BODY_FONT};font-weight:bold;font-size:${font};padding:${pad};cursor:pointer;text-align:center;box-sizing:border-box;transition:filter 0.1s;`;
+  return `background:linear-gradient(160deg, #a3a3a3 0%, ${STONE} 55%, #737373 100%);${bevel('raised', 2)}border-radius:4px;box-shadow:0 0 0 2px #000, 0 3px 6px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.3);color:#fff;font-family:${BODY_FONT};font-weight:bold;font-size:${font};padding:${pad};cursor:pointer;text-align:center;box-sizing:border-box;transition:filter 0.1s, transform 0.08s, box-shadow 0.08s;`;
 }
 
 export function slotStyle(size = 40): string {
-  return `width:${size}px;height:${size}px;background:${STONE};${bevel('sunken', 2)}box-shadow:0 0 0 1px #000;box-sizing:border-box;position:relative;`;
+  return `width:${size}px;height:${size}px;background:linear-gradient(160deg, #6d6d6d 0%, #838383 100%);${bevel('sunken', 2)}border-radius:3px;box-shadow:0 0 0 1px #000, inset 0 2px 5px rgba(0,0,0,0.55);box-sizing:border-box;position:relative;`;
 }
 
 export function inputStyle(): string {
-  return `background:#fff;${bevel('sunken', 2)}box-shadow:0 0 0 2px #000;padding:8px;font-family:${BODY_FONT};box-sizing:border-box;`;
+  return `background:#fff;${bevel('sunken', 2)}border-radius:3px;box-shadow:0 0 0 2px #000, inset 0 2px 4px rgba(0,0,0,0.2);padding:8px;font-family:${BODY_FONT};box-sizing:border-box;`;
 }
 
 export function attachButtonHover(el: HTMLElement) {
   el.addEventListener('mouseenter', () => {
-    el.style.filter = 'brightness(1.25)';
+    el.style.filter = 'brightness(1.2)';
+    el.style.transform = 'translateY(-1px)';
   });
   el.addEventListener('mouseleave', () => {
     el.style.filter = 'none';
+    el.style.transform = 'none';
+  });
+  el.addEventListener('mousedown', () => {
+    el.style.transform = 'translateY(1px)';
+    el.style.filter = 'brightness(0.95)';
+  });
+  el.addEventListener('mouseup', () => {
+    el.style.transform = 'translateY(-1px)';
+    el.style.filter = 'brightness(1.2)';
   });
 }
 

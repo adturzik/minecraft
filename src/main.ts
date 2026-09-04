@@ -8,6 +8,7 @@ import { raycastVoxels } from './engine/world/voxelRaycast';
 import { PlayerController } from './game/player/playerController';
 import { BlockId, tierIndex, ToolTier } from './game/items/blockDefs';
 import { getBlockDef } from './game/items/blocks';
+import { averageTileColor } from './engine/mesh/textureAtlas';
 import { blockDropItemId, getItemDef, miningSeconds } from './game/items/items';
 import { CrackOverlay } from './engine/mesh/crackOverlay';
 import { HeldItemView } from './engine/mesh/heldItemView';
@@ -508,6 +509,59 @@ function startGame(opts: PlayOptions) {
     crackOverlay.hide();
   }
 
+  // Block-break debris: a handful of small cubes tinted with the broken
+  // block's own average texture color (so it reads as a real chunk of that
+  // block, same idea as vanilla Minecraft's break particles), tossed with
+  // random velocity and settling under gravity/collision before fading out.
+  interface BreakParticle {
+    mesh: THREE.Mesh;
+    velocity: THREE.Vector3;
+    age: number;
+    maxLife: number;
+  }
+  const breakParticles: BreakParticle[] = [];
+  function spawnBreakParticles(bx: number, by: number, bz: number, blockId: number) {
+    const def = getBlockDef(blockId);
+    const [r, g, b] = averageTileColor(def.top);
+    const color = new THREE.Color(r / 255, g / 255, b / 255);
+    for (let i = 0; i < 7; i++) {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.15), new THREE.MeshLambertMaterial({ color }));
+      mesh.position.set(
+        bx + 0.5 + (Math.random() - 0.5) * 0.7,
+        by + 0.3 + Math.random() * 0.5,
+        bz + 0.5 + (Math.random() - 0.5) * 0.7
+      );
+      scene.add(mesh);
+      breakParticles.push({
+        mesh,
+        velocity: new THREE.Vector3((Math.random() - 0.5) * 2.4, Math.random() * 2.6 + 1.4, (Math.random() - 0.5) * 2.4),
+        age: 0,
+        maxLife: 0.45 + Math.random() * 0.3,
+      });
+    }
+  }
+  function updateBreakParticles(dt: number) {
+    for (let i = breakParticles.length - 1; i >= 0; i--) {
+      const p = breakParticles[i];
+      p.age += dt;
+      p.velocity.y -= 9 * dt;
+      const next = p.mesh.position.clone().addScaledVector(p.velocity, dt);
+      if (chunkManager.isSolid(Math.floor(next.x), Math.floor(next.y), Math.floor(next.z))) {
+        p.velocity.set(0, 0, 0);
+      } else {
+        p.mesh.position.copy(next);
+      }
+      if (p.age >= p.maxLife) {
+        scene.remove(p.mesh);
+        p.mesh.geometry.dispose();
+        (p.mesh.material as THREE.Material).dispose();
+        breakParticles.splice(i, 1);
+      } else {
+        p.mesh.scale.setScalar(1 - (p.age / p.maxLife) * 0.6);
+      }
+    }
+  }
+
   /** Breaks the block at (x,y,z): removes it, plays the sound, drops the
    * harvested item (if the held tool meets the block's minimum tier) and
    * damages the held tool. Shared by the instant-break path (hardness 0
@@ -515,6 +569,7 @@ function startGame(opts: PlayOptions) {
   function breakBlock(x: number, y: number, z: number) {
     const brokenId = chunkManager.getBlock(x, y, z);
     if (brokenId === BlockId.Air) return;
+    spawnBreakParticles(x, y, z, brokenId);
     chunkManager.setBlock(x, y, z, BlockId.Air);
     scheduleFluidCheck(x, y, z);
     soundEngine.breakBlock();
@@ -857,6 +912,7 @@ function startGame(opts: PlayOptions) {
 
     elapsedTime += dt;
     updateSwayTime(elapsedTime);
+    updateBreakParticles(dt);
 
     torchRefreshTimer -= dt;
     if (torchRefreshTimer <= 0) {
