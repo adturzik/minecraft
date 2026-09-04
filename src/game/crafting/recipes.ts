@@ -193,6 +193,24 @@ export const RECIPES: Recipe[] = [
     result: { itemId: 'shears', count: 1 },
   },
   {
+    id: 'bow',
+    type: 'shaped',
+    requiresTable: true,
+    pattern: [
+      [null, 'stick', 'string'],
+      ['stick', null, 'string'],
+      [null, 'stick', 'string'],
+    ],
+    result: { itemId: 'bow', count: 1 },
+  },
+  {
+    id: 'arrow',
+    type: 'shaped',
+    requiresTable: true, // 3 rows tall -- doesn't fit the personal 2x2 grid
+    pattern: [['flint'], ['stick'], ['feather']],
+    result: { itemId: 'arrow', count: 4 },
+  },
+  {
     id: 'golden_apple',
     type: 'shaped',
     requiresTable: true,

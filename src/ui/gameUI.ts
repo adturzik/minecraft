@@ -17,7 +17,7 @@ const CREATIVE_TAB_LABEL: Record<CreativeTab, string> = {
 };
 
 function itemCategory(def: ItemDef): CreativeTab {
-  if (def.armorType || def.toolType === 'sword') return 'combat';
+  if (def.armorType || def.toolType === 'sword' || def.id === 'bow' || def.id === 'arrow') return 'combat';
   if (def.toolType) return 'tools';
   if (def.foodRestore) return 'food';
   if (def.isBlock) return 'blocks';
