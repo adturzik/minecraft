@@ -104,6 +104,47 @@ const CROSS_CORNERS: [number, number, number][][] = [
   [[0.8536, 0, 0.1464], [0.1464, 0, 0.8536], [0.1464, 1, 0.8536], [0.8536, 1, 0.1464]],
 ];
 
+/** Classic voxel-engine vertex AO (see e.g. the 0fps.net writeup): darkens a
+ * face's corner based on the up-to-3 opaque neighbor cells that touch it in
+ * the layer the face opens into -- two edge-adjacent cells plus the diagonal
+ * between them. Gives Minecraft's "smooth lighting" corner-darkening look
+ * (concave corners read as recessed) instead of every vertex on a face
+ * sharing one flat baked shade. Returns 0.55 (fully occluded) .. 1.0 (open),
+ * floored so corners never crush to pure black on top of the light/shade
+ * multipliers already applied. */
+function computeVertexAO(
+  isOpaqueAt: (x: number, y: number, z: number) => boolean,
+  nx: number,
+  ny: number,
+  nz: number,
+  dir: [number, number, number],
+  corner: [number, number, number]
+): number {
+  const off: [number, number, number] = [0, 0, 0];
+  for (let axis = 0; axis < 3; axis++) {
+    if (dir[axis] !== 0) continue; // the normal axis isn't a tangent -- leave at 0
+    off[axis] = corner[axis] > 0.5 ? 1 : -1;
+  }
+  const sideA: [number, number, number] = [nx, ny, nz];
+  const sideB: [number, number, number] = [nx, ny, nz];
+  const cornerCell: [number, number, number] = [nx, ny, nz];
+  let pickedFirst = false;
+  for (let axis = 0; axis < 3; axis++) {
+    if (off[axis] === 0) continue;
+    cornerCell[axis] += off[axis];
+    if (!pickedFirst) {
+      sideA[axis] += off[axis];
+      pickedFirst = true;
+    } else {
+      sideB[axis] += off[axis];
+    }
+  }
+  const s1 = isOpaqueAt(sideA[0], sideA[1], sideA[2]);
+  const s2 = isOpaqueAt(sideB[0], sideB[1], sideB[2]);
+  const ao = s1 && s2 ? 0 : 3 - (s1 ? 1 : 0) - (s2 ? 1 : 0) - (isOpaqueAt(cornerCell[0], cornerCell[1], cornerCell[2]) ? 1 : 0);
+  return 0.55 + 0.15 * ao;
+}
+
 export function buildChunkMesh(
   getBlock: Getter,
   sizeX: number,
@@ -114,6 +155,10 @@ export function buildChunkMesh(
 ): { opaque: MeshBuffers; transparent: MeshBuffers } {
   const opaque = emptyBuffers();
   const transparent = emptyBuffers();
+  const isOpaqueAt = (x: number, y: number, z: number) => {
+    const cellId = getBlock(x, y, z);
+    return cellId !== 0 && getInfo(cellId).opaque;
+  };
 
   for (let y = 0; y < sizeY; y++) {
     for (let z = 0; z < sizeZ; z++) {
@@ -173,9 +218,11 @@ export function buildChunkMesh(
           // face at its actual surface.
           const swayValue = info.renderType === 'liquid' && face.which === 'top' ? 2 : 0;
           for (const corner of face.corners) {
+            const ao = computeVertexAO(isOpaqueAt, nx, ny, nz, face.dir, corner);
+            const cornerShade = finalShade * ao;
             target.positions.push(x + corner[0], y + corner[1], z + corner[2]);
             target.normals.push(face.dir[0], face.dir[1], face.dir[2]);
-            target.colors.push(finalShade, finalShade, finalShade);
+            target.colors.push(cornerShade, cornerShade, cornerShade);
             target.sway.push(swayValue);
           }
           for (const uv of faceUVs(info, face.which)) {
