@@ -48,10 +48,13 @@ function hideTooltip() {
   if (tooltipEl) tooltipEl.style.display = 'none';
 }
 
-/** Small pop-in transition for a freshly (re)built screen panel -- every
- * inventory/crafting/furnace render() call rebuilds screenRoot from scratch,
- * so this runs once per open/tab-switch rather than being a persistent
- * animation. */
+/** Small pop-in transition for a freshly built screen panel. Screens are now
+ * built once per open (see GameUI's builtScreen tracking) and merely have
+ * their slot *contents* refreshed on every click/tick after that, so this
+ * only ever runs once per open/tab-switch instead of on every interaction --
+ * running it on every click (the previous behavior, when every click tore
+ * the whole panel down and rebuilt it) was what made the whole screen
+ * visibly flicker/re-pop-in constantly. */
 function animateIn(panel: HTMLDivElement) {
   panel.style.transition = 'opacity 0.1s ease-out, transform 0.1s ease-out';
   panel.style.opacity = '0';
@@ -152,51 +155,74 @@ const SHIRT_COLOR = '#4a7fc9';
 const PANTS_COLOR = '#3a4a6b';
 const BOOTS_COLOR = '#2a2a2a';
 
+interface CharacterPreview {
+  el: HTMLDivElement;
+  refresh: () => void;
+}
+
 /** Blocky front-facing character silhouette (head/torso/arms/legs/boots as
  * flat rectangles, matching the rest of the UI's flat-swatch look). Colors
  * reflect whatever's equipped in armorSlots, and the right hand shows the
- * currently-selected hotbar item, so equipping gear is actually visible. */
-function buildCharacterPreview(inventory: Inventory): HTMLDivElement {
+ * currently-selected hotbar item. Built once; `refresh()` re-colors the same
+ * DOM nodes in place instead of tearing the preview down on every change. */
+function buildCharacterPreview(inventory: Inventory): CharacterPreview {
   const wrap = document.createElement('div');
   wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:3px;';
 
   const stage = document.createElement('div');
   stage.style.cssText = `position:relative;width:84px;height:132px;background:rgba(0,0,0,0.15);${bevel('sunken', 2)}box-sizing:border-box;`;
 
-  const helmetColor = armorPieceColor(inventory.armorSlots[0]) ?? SKIN_COLOR;
-  const chestColor = armorPieceColor(inventory.armorSlots[1]) ?? SHIRT_COLOR;
-  const legsColor = armorPieceColor(inventory.armorSlots[2]) ?? PANTS_COLOR;
-  const bootsColor = armorPieceColor(inventory.armorSlots[3]) ?? BOOTS_COLOR;
-
-  const part = (css: string, bg: string) => {
+  type PartKind = 'helmet' | 'chest' | 'legs' | 'boots';
+  const parts: { el: HTMLDivElement; kind: PartKind }[] = [];
+  const part = (css: string, kind: PartKind) => {
     const d = document.createElement('div');
-    d.style.cssText = `position:absolute;box-shadow:inset 0 0 0 1px rgba(0,0,0,0.4);background:${bg};${css}`;
+    d.style.cssText = `position:absolute;box-shadow:inset 0 0 0 1px rgba(0,0,0,0.4);${css}`;
     stage.appendChild(d);
+    parts.push({ el: d, kind });
   };
 
-  part('left:30px;top:4px;width:24px;height:24px;', helmetColor); // head
-  part('left:22px;top:30px;width:40px;height:44px;', chestColor); // torso
-  part('left:10px;top:30px;width:12px;height:44px;', chestColor); // left arm (sleeve)
-  part('left:62px;top:30px;width:12px;height:44px;', SKIN_COLOR); // right arm (bare, holds item)
-  part('left:22px;top:76px;width:18px;height:30px;', legsColor); // left leg
-  part('left:44px;top:76px;width:18px;height:30px;', legsColor); // right leg
-  part('left:22px;top:106px;width:18px;height:8px;', bootsColor);
-  part('left:44px;top:106px;width:18px;height:8px;', bootsColor);
+  part('left:30px;top:4px;width:24px;height:24px;', 'helmet');
+  part('left:22px;top:30px;width:40px;height:44px;', 'chest'); // torso
+  part('left:10px;top:30px;width:12px;height:44px;', 'chest'); // left arm sleeve
+  const rightArm = document.createElement('div'); // bare arm holding the item, never re-tinted
+  rightArm.style.cssText = `position:absolute;left:62px;top:30px;width:12px;height:44px;box-shadow:inset 0 0 0 1px rgba(0,0,0,0.4);background:${SKIN_COLOR};`;
+  stage.appendChild(rightArm);
+  part('left:22px;top:76px;width:18px;height:30px;', 'legs');
+  part('left:44px;top:76px;width:18px;height:30px;', 'legs');
+  part('left:22px;top:106px;width:18px;height:8px;', 'boots');
+  part('left:44px;top:106px;width:18px;height:8px;', 'boots');
 
-  const heldStack = inventory.selectedStack;
-  if (heldStack) {
-    const def = getItemDef(heldStack.itemId);
-    const hand = document.createElement('div');
-    hand.style.cssText = `position:absolute;left:60px;top:66px;width:16px;height:16px;box-shadow:0 0 0 1px #000;image-rendering:auto;background-image:url(${itemIconUrl(def)});background-size:cover;`;
-    stage.appendChild(hand);
-  }
+  const hand = document.createElement('div');
+  hand.style.cssText = 'position:absolute;left:60px;top:66px;width:16px;height:16px;box-shadow:0 0 0 1px #000;background-size:cover;display:none;';
+  stage.appendChild(hand);
 
   wrap.appendChild(stage);
   const label = document.createElement('div');
   label.style.cssText = `font-size:10px;font-family:${BODY_FONT};color:#333;`;
   label.textContent = 'Postava';
   wrap.appendChild(label);
-  return wrap;
+
+  const COLOR_FOR: Record<PartKind, () => string> = {
+    helmet: () => armorPieceColor(inventory.armorSlots[0]) ?? SKIN_COLOR,
+    chest: () => armorPieceColor(inventory.armorSlots[1]) ?? SHIRT_COLOR,
+    legs: () => armorPieceColor(inventory.armorSlots[2]) ?? PANTS_COLOR,
+    boots: () => armorPieceColor(inventory.armorSlots[3]) ?? BOOTS_COLOR,
+  };
+
+  const refresh = () => {
+    for (const { el, kind } of parts) el.style.background = COLOR_FOR[kind]();
+    const heldStack = inventory.selectedStack;
+    if (heldStack) {
+      const def = getItemDef(heldStack.itemId);
+      hand.style.display = 'block';
+      hand.style.backgroundImage = `url(${itemIconUrl(def)})`;
+    } else {
+      hand.style.display = 'none';
+    }
+  };
+  refresh();
+
+  return { el: wrap, refresh };
 }
 
 function craftArrow(): HTMLDivElement {
@@ -207,9 +233,48 @@ function craftArrow(): HTMLDivElement {
 
 export type WorldBlockTarget = { x: number; y: number; z: number };
 
+const ARMOR_LABEL: Record<string, string> = { helmet: 'HL', chestplate: 'CH', leggings: 'LG', boots: 'BT' };
+
+interface CharacterPanel {
+  el: HTMLDivElement;
+  refresh: () => void;
+}
+
+interface InventoryScreenRefs {
+  craftEls: HTMLDivElement[];
+  outputEl: HTMLDivElement;
+  storageEls: HTMLDivElement[];
+  hotbarEls: HTMLDivElement[];
+}
+
+interface CreativeScreenRefs {
+  paletteGrid: HTMLDivElement;
+  storageEls: HTMLDivElement[];
+  hotbarEls: HTMLDivElement[];
+  tabButtons: HTMLButtonElement[];
+}
+
+interface FurnaceScreenRefs {
+  inputEl: HTMLDivElement;
+  fuelEl: HTMLDivElement;
+  outputEl: HTMLDivElement;
+  progressFill: HTMLDivElement;
+  flame: HTMLDivElement;
+  hotbarEls: HTMLDivElement[];
+}
+
+type BuiltScreen = 'inventory' | 'creative' | 'furnace' | null;
+
 /** Owns the inventory + hotbar HUD + inventory/crafting-table/furnace
  * screens and the shared "held stack follows the cursor" interaction model
- * (same click-pick-up-then-click-place UX as vanilla Minecraft). */
+ * (same click-pick-up-then-click-place UX as vanilla Minecraft).
+ *
+ * Each screen is built once per open (see builtScreen) and every later
+ * click/tick only updates the already-built slot elements' *contents* in
+ * place -- never re-running screenRoot.innerHTML='' -- since a full
+ * teardown+rebuild on every interaction (and, for the furnace, on every
+ * single frame via tickFurnaceUI) is what made these screens visibly
+ * flicker/re-pop-in constantly. */
 export class GameUI {
   readonly inventory = new Inventory();
   private held: Slot = null;
@@ -229,6 +294,12 @@ export class GameUI {
 
   private activeFurnacePos: WorldBlockTarget | null = null;
   private getFurnace: ((pos: WorldBlockTarget) => FurnaceState) | null = null;
+
+  private builtScreen: BuiltScreen = null;
+  private characterPanel: CharacterPanel | null = null;
+  private inventoryRefs: InventoryScreenRefs | null = null;
+  private creativeRefs: CreativeScreenRefs | null = null;
+  private furnaceRefs: FurnaceScreenRefs | null = null;
 
   onCloseScreen: (() => void) | null = null;
   /** Fired whenever any screen (inventory/crafting table/furnace) opens —
@@ -334,6 +405,11 @@ export class GameUI {
       this.refreshHotbar();
     }
     this.activeFurnacePos = null;
+    this.builtScreen = null;
+    this.characterPanel = null;
+    this.inventoryRefs = null;
+    this.creativeRefs = null;
+    this.furnaceRefs = null;
     this.onCloseScreen?.();
   }
 
@@ -349,6 +425,7 @@ export class GameUI {
     this.craftGrid = new Array(4).fill(null);
     this.craftOutput = null;
     this.screenOpen = true;
+    this.builtScreen = null; // force a fresh build for this screen shape
     this.onOpenScreen?.();
     if (this.gameMode === 'creative') this.renderCreative();
     else this.render();
@@ -360,6 +437,7 @@ export class GameUI {
     this.craftGrid = new Array(9).fill(null);
     this.craftOutput = null;
     this.screenOpen = true;
+    this.builtScreen = null;
     this.onOpenScreen?.();
     this.render();
   }
@@ -368,11 +446,14 @@ export class GameUI {
     this.activeFurnacePos = pos;
     this.getFurnace = getFurnace;
     this.screenOpen = true;
+    this.builtScreen = null;
     this.onOpenScreen?.();
     this.renderFurnace();
   }
 
-  /** Call once per frame while a furnace screen is open, so the progress bar animates. */
+  /** Call once per frame while a furnace screen is open, so the progress bar
+   * animates. Cheap now: the screen was already built on open, this just
+   * refreshes slot contents/progress in place. */
   tickFurnaceUI() {
     if (this.screenOpen && this.activeFurnacePos && this.getFurnace) this.renderFurnace();
   }
@@ -380,6 +461,18 @@ export class GameUI {
   private updateCraftOutput() {
     const match = matchRecipe(this.craftGrid, this.craftGridSize, this.craftGridSize, this.hasTable);
     this.craftOutput = match ? { itemId: match.resultItemId, count: match.resultCount } : null;
+  }
+
+  /** Refreshes whichever screen is currently built, without rebuilding it —
+   * used by handlers (armor equip, crafting) that can fire from more than
+   * one screen. */
+  private refreshCurrentScreen() {
+    this.renderHeldCursor();
+    if (this.builtScreen === 'inventory') this.refreshInventoryScreen();
+    else if (this.builtScreen === 'creative') this.refreshCreativeScreen();
+    else if (this.builtScreen === 'furnace' && this.activeFurnacePos && this.getFurnace) {
+      this.refreshFurnaceScreen(this.getFurnace(this.activeFurnacePos));
+    }
   }
 
   private onArmorSlotClick(slotIndex: number, right: boolean) {
@@ -394,14 +487,13 @@ export class GameUI {
     const res = Inventory.clickSlot(this.held, current, right);
     this.held = res.held;
     this.inventory.armorSlots[slotIndex] = res.slot;
-    this.render();
+    this.refreshCurrentScreen();
   }
 
   private onInventorySlotClick(index: number, right: boolean) {
     const res = Inventory.clickSlot(this.held, this.inventory.slots[index], right);
     this.held = res.held;
     this.inventory.slots[index] = res.slot;
-    this.render();
     this.refreshHotbar();
   }
 
@@ -410,7 +502,7 @@ export class GameUI {
     this.held = res.held;
     this.craftGrid[index] = res.slot;
     this.updateCraftOutput();
-    this.render();
+    this.refreshCurrentScreen();
   }
 
   private onCraftOutputClick() {
@@ -427,7 +519,7 @@ export class GameUI {
       }
     }
     this.updateCraftOutput();
-    this.render();
+    this.refreshCurrentScreen();
   }
 
   private renderHeldCursor() {
@@ -440,24 +532,21 @@ export class GameUI {
     }
   }
 
-  private buildCharacterPanel(): HTMLDivElement {
+  /** Builds the character preview + armor slots once; returns a refresh()
+   * that re-colors/re-icons the same nodes for later armor/held-item
+   * changes. Stored on `this.characterPanel` by whichever screen builds it. */
+  private buildCharacterPanel(): CharacterPanel {
     const characterPanel = document.createElement('div');
     characterPanel.style.cssText = 'display:flex;align-items:flex-start;gap:8px;margin-right:6px;';
-    characterPanel.appendChild(buildCharacterPreview(this.inventory));
+    const preview = buildCharacterPreview(this.inventory);
+    characterPanel.appendChild(preview.el);
 
     const armorCol = document.createElement('div');
     armorCol.style.cssText = 'display:grid;grid-template-columns:repeat(1,40px);gap:2px;background:rgba(0,0,0,0.15);padding:4px;';
-    const ARMOR_LABEL: Record<string, string> = { helmet: 'HL', chestplate: 'CH', leggings: 'LG', boots: 'BT' };
+    const armorEls: HTMLDivElement[] = [];
     ARMOR_TYPES.forEach((type, i) => {
       const el = document.createElement('div');
       styleSlotEl(el);
-      renderSlotContent(el, this.inventory.armorSlots[i]);
-      if (!this.inventory.armorSlots[i]) {
-        const placeholder = document.createElement('div');
-        placeholder.style.cssText = `position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:8px ${BODY_FONT};color:rgba(0,0,0,0.35);pointer-events:none;`;
-        placeholder.textContent = ARMOR_LABEL[type];
-        el.appendChild(placeholder);
-      }
       el.addEventListener('click', () => {
         soundEngine.uiClick();
         this.onArmorSlotClick(i, false);
@@ -468,14 +557,47 @@ export class GameUI {
         this.onArmorSlotClick(i, true);
       });
       armorCol.appendChild(el);
+      armorEls.push(el);
     });
     characterPanel.appendChild(armorCol);
-    return characterPanel;
+
+    const refresh = () => {
+      preview.refresh();
+      armorEls.forEach((el, i) => {
+        const type = ARMOR_TYPES[i];
+        renderSlotContent(el, this.inventory.armorSlots[i]);
+        let placeholder = el.querySelector('.armor-placeholder') as HTMLDivElement | null;
+        if (!this.inventory.armorSlots[i]) {
+          if (!placeholder) {
+            placeholder = document.createElement('div');
+            placeholder.className = 'armor-placeholder';
+            placeholder.style.cssText = `position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:8px ${BODY_FONT};color:rgba(0,0,0,0.35);pointer-events:none;`;
+            el.appendChild(placeholder);
+          }
+          placeholder.textContent = ARMOR_LABEL[type];
+        } else {
+          placeholder?.remove();
+        }
+      });
+    };
+    refresh();
+
+    return { el: characterPanel, refresh };
   }
+
+  // ---------------- inventory / crafting-table screen ----------------
 
   private render() {
     this.renderHeldCursor();
     this.screenRoot.style.display = 'flex';
+    if (this.builtScreen !== 'inventory' || !this.inventoryRefs) {
+      this.buildInventoryScreen();
+      this.builtScreen = 'inventory';
+    }
+    this.refreshInventoryScreen();
+  }
+
+  private buildInventoryScreen() {
     this.screenRoot.innerHTML = '';
 
     const panel = document.createElement('div');
@@ -490,16 +612,21 @@ export class GameUI {
     const craftRow = document.createElement('div');
     craftRow.style.cssText = 'display:flex;align-items:center;gap:10px;';
 
-    if (!this.hasTable) craftRow.appendChild(this.buildCharacterPanel());
+    if (!this.hasTable) {
+      this.characterPanel = this.buildCharacterPanel();
+      craftRow.appendChild(this.characterPanel.el);
+    } else {
+      this.characterPanel = null;
+    }
 
-    const craftGridWidget = makeSlotGrid(this.craftGrid.length, this.craftGridSize, (i, r) => this.onCraftSlotClick(i, r));
-    craftGridWidget.els.forEach((el, i) => renderSlotContent(el, this.craftGrid[i]));
+    const craftGridWidget = makeSlotGrid(this.craftGrid.length, this.craftGridSize, (i, r) => {
+      this.onCraftSlotClick(i, r);
+    });
     craftRow.appendChild(craftGridWidget.root);
     craftRow.appendChild(craftArrow());
 
     const outputEl = document.createElement('div');
     styleSlotEl(outputEl);
-    renderSlotContent(outputEl, this.craftOutput);
     outputEl.addEventListener('click', () => {
       soundEngine.craft();
       this.onCraftOutputClick();
@@ -507,12 +634,16 @@ export class GameUI {
     craftRow.appendChild(outputEl);
     panel.appendChild(craftRow);
 
-    const storageGrid = makeSlotGrid(this.inventory.getStorage().length, 9, (i, r) => this.onInventorySlotClick(i + HOTBAR_SIZE, r));
-    storageGrid.els.forEach((el, i) => renderSlotContent(el, this.inventory.getStorage()[i]));
+    const storageGrid = makeSlotGrid(this.inventory.getStorage().length, 9, (i, r) => {
+      this.onInventorySlotClick(i + HOTBAR_SIZE, r);
+      this.refreshInventoryScreen();
+    });
     panel.appendChild(storageGrid.root);
 
-    const hotbarGrid = makeSlotGrid(HOTBAR_SIZE, 9, (i, r) => this.onInventorySlotClick(i, r));
-    hotbarGrid.els.forEach((el, i) => renderSlotContent(el, this.inventory.getHotbar()[i]));
+    const hotbarGrid = makeSlotGrid(HOTBAR_SIZE, 9, (i, r) => {
+      this.onInventorySlotClick(i, r);
+      this.refreshInventoryScreen();
+    });
     panel.appendChild(hotbarGrid.root);
 
     const hint = document.createElement('div');
@@ -523,7 +654,27 @@ export class GameUI {
     this.screenRoot.appendChild(panel);
     animateIn(panel);
     this.screenRoot.onclick = () => this.close();
+
+    this.inventoryRefs = {
+      craftEls: craftGridWidget.els,
+      outputEl,
+      storageEls: storageGrid.els,
+      hotbarEls: hotbarGrid.els,
+    };
   }
+
+  private refreshInventoryScreen() {
+    this.renderHeldCursor();
+    const refs = this.inventoryRefs;
+    if (!refs) return;
+    refs.craftEls.forEach((el, i) => renderSlotContent(el, this.craftGrid[i]));
+    renderSlotContent(refs.outputEl, this.craftOutput);
+    refs.storageEls.forEach((el, i) => renderSlotContent(el, this.inventory.getStorage()[i]));
+    refs.hotbarEls.forEach((el, i) => renderSlotContent(el, this.inventory.getHotbar()[i]));
+    this.characterPanel?.refresh();
+  }
+
+  // ---------------- creative palette screen ----------------
 
   /** Creative has no hand-crafting grid -- instead a tabbed item palette
    * (matching vanilla's creative inventory) lets you click any item/block
@@ -532,6 +683,14 @@ export class GameUI {
   private renderCreative() {
     this.renderHeldCursor();
     this.screenRoot.style.display = 'flex';
+    if (this.builtScreen !== 'creative' || !this.creativeRefs) {
+      this.buildCreativeScreen();
+      this.builtScreen = 'creative';
+    }
+    this.refreshCreativeScreen();
+  }
+
+  private buildCreativeScreen() {
     this.screenRoot.innerHTML = '';
 
     const panel = document.createElement('div');
@@ -545,56 +704,47 @@ export class GameUI {
 
     const topRow = document.createElement('div');
     topRow.style.cssText = 'display:flex;align-items:flex-start;gap:10px;';
-    topRow.appendChild(this.buildCharacterPanel());
+    this.characterPanel = this.buildCharacterPanel();
+    topRow.appendChild(this.characterPanel.el);
 
     const paletteCol = document.createElement('div');
     paletteCol.style.cssText = 'display:flex;flex-direction:column;gap:4px;flex:1;';
 
     const tabRow = document.createElement('div');
     tabRow.style.cssText = 'display:flex;gap:2px;';
+    const tabButtons: HTMLButtonElement[] = [];
     (Object.keys(CREATIVE_TAB_LABEL) as CreativeTab[]).forEach((tab) => {
       const b = document.createElement('button');
       b.textContent = CREATIVE_TAB_LABEL[tab];
-      b.style.cssText = buttonStyle('small') + `flex:1;padding:4px 2px;font-size:10px;${tab === this.creativeTab ? 'filter:brightness(1.3);' : ''}`;
+      b.style.cssText = buttonStyle('small') + 'flex:1;padding:4px 2px;font-size:10px;';
       attachButtonHover(b);
       b.addEventListener('click', () => {
         soundEngine.uiClick();
         this.creativeTab = tab;
-        this.renderCreative();
+        this.rebuildCreativePalette();
+        this.refreshCreativeTabHighlight();
       });
       tabRow.appendChild(b);
+      tabButtons.push(b);
     });
     paletteCol.appendChild(tabRow);
 
     const paletteGrid = document.createElement('div');
     paletteGrid.style.cssText = 'display:grid;grid-template-columns:repeat(6,40px);gap:2px;background:rgba(0,0,0,0.15);padding:4px;max-height:180px;overflow-y:auto;';
-    for (const def of CREATIVE_ITEMS_BY_TAB[this.creativeTab]) {
-      const el = document.createElement('div');
-      styleSlotEl(el);
-      renderSlotContent(el, { itemId: def.id, count: 1 });
-      el.addEventListener('click', () => {
-        soundEngine.uiClick();
-        this.giveItem(def.id, def.stackSize);
-        this.renderCreative();
-      });
-      paletteGrid.appendChild(el);
-    }
     paletteCol.appendChild(paletteGrid);
     topRow.appendChild(paletteCol);
     panel.appendChild(topRow);
 
     const storageGrid = makeSlotGrid(this.inventory.getStorage().length, 9, (i, r) => {
       this.onInventorySlotClick(i + HOTBAR_SIZE, r);
-      this.renderCreative();
+      this.refreshCreativeScreen();
     });
-    storageGrid.els.forEach((el, i) => renderSlotContent(el, this.inventory.getStorage()[i]));
     panel.appendChild(storageGrid.root);
 
     const hotbarGrid = makeSlotGrid(HOTBAR_SIZE, 9, (i, r) => {
       this.onInventorySlotClick(i, r);
-      this.renderCreative();
+      this.refreshCreativeScreen();
     });
-    hotbarGrid.els.forEach((el, i) => renderSlotContent(el, this.inventory.getHotbar()[i]));
     panel.appendChild(hotbarGrid.root);
 
     const hint = document.createElement('div');
@@ -605,13 +755,64 @@ export class GameUI {
     this.screenRoot.appendChild(panel);
     animateIn(panel);
     this.screenRoot.onclick = () => this.close();
+
+    this.creativeRefs = { paletteGrid, storageEls: storageGrid.els, hotbarEls: hotbarGrid.els, tabButtons };
+    this.rebuildCreativePalette();
+    this.refreshCreativeTabHighlight();
   }
+
+  /** Only the item palette grid needs rebuilding on a tab switch (different
+   * item list) -- everything else in the screen stays untouched. */
+  private rebuildCreativePalette() {
+    const refs = this.creativeRefs;
+    if (!refs) return;
+    refs.paletteGrid.innerHTML = '';
+    for (const def of CREATIVE_ITEMS_BY_TAB[this.creativeTab]) {
+      const el = document.createElement('div');
+      styleSlotEl(el);
+      renderSlotContent(el, { itemId: def.id, count: 1 });
+      el.addEventListener('click', () => {
+        soundEngine.uiClick();
+        this.giveItem(def.id, def.stackSize);
+        this.refreshCreativeScreen();
+      });
+      refs.paletteGrid.appendChild(el);
+    }
+  }
+
+  private refreshCreativeTabHighlight() {
+    const refs = this.creativeRefs;
+    if (!refs) return;
+    const tabs = Object.keys(CREATIVE_TAB_LABEL) as CreativeTab[];
+    refs.tabButtons.forEach((b, i) => {
+      b.style.filter = tabs[i] === this.creativeTab ? 'brightness(1.3)' : 'none';
+    });
+  }
+
+  private refreshCreativeScreen() {
+    this.renderHeldCursor();
+    const refs = this.creativeRefs;
+    if (!refs) return;
+    refs.storageEls.forEach((el, i) => renderSlotContent(el, this.inventory.getStorage()[i]));
+    refs.hotbarEls.forEach((el, i) => renderSlotContent(el, this.inventory.getHotbar()[i]));
+    this.characterPanel?.refresh();
+  }
+
+  // ---------------- furnace screen ----------------
 
   private renderFurnace() {
     if (!this.activeFurnacePos || !this.getFurnace) return;
     const state = this.getFurnace(this.activeFurnacePos);
     this.renderHeldCursor();
     this.screenRoot.style.display = 'flex';
+    if (this.builtScreen !== 'furnace' || !this.furnaceRefs) {
+      this.buildFurnaceScreen();
+      this.builtScreen = 'furnace';
+    }
+    this.refreshFurnaceScreen(state);
+  }
+
+  private buildFurnaceScreen() {
     this.screenRoot.innerHTML = '';
 
     const panel = document.createElement('div');
@@ -630,53 +831,51 @@ export class GameUI {
     col.style.cssText = 'display:flex;flex-direction:column;gap:4px;align-items:center;';
     const inputEl = document.createElement('div');
     styleSlotEl(inputEl);
-    renderSlotContent(inputEl, state.input);
     inputEl.addEventListener('click', () => {
       soundEngine.uiClick();
-      const res = Inventory.clickSlot(this.held, state.input, false);
+      const st = this.getFurnace!(this.activeFurnacePos!);
+      const res = Inventory.clickSlot(this.held, st.input, false);
       this.held = res.held;
-      state.input = res.slot;
-      this.renderFurnace();
+      st.input = res.slot;
+      this.refreshFurnaceScreen(st);
     });
     const progressBar = document.createElement('div');
     progressBar.style.cssText = `width:36px;height:6px;background:#111;${bevel('sunken', 1)}box-sizing:border-box;`;
     const progressFill = document.createElement('div');
-    progressFill.style.cssText = `width:${state.smeltProgress * 100}%;height:100%;background:#e94;`;
+    progressFill.style.cssText = 'height:100%;background:#e94;';
     progressBar.appendChild(progressFill);
     const fuelEl = document.createElement('div');
     styleSlotEl(fuelEl);
-    renderSlotContent(fuelEl, state.fuel);
     fuelEl.addEventListener('click', () => {
       soundEngine.uiClick();
-      const res = Inventory.clickSlot(this.held, state.fuel, false);
+      const st = this.getFurnace!(this.activeFurnacePos!);
+      const res = Inventory.clickSlot(this.held, st.fuel, false);
       this.held = res.held;
-      state.fuel = res.slot;
-      this.renderFurnace();
+      st.fuel = res.slot;
+      this.refreshFurnaceScreen(st);
     });
     const flame = document.createElement('div');
-    flame.textContent = state.burnTimeRemaining > 0 ? '🔥' : '·';
     col.append(inputEl, progressBar, flame, fuelEl);
     row.appendChild(col);
     row.appendChild(craftArrow());
 
     const outputEl = document.createElement('div');
     styleSlotEl(outputEl);
-    renderSlotContent(outputEl, state.output);
     outputEl.addEventListener('click', () => {
       soundEngine.craft();
-      const res = Inventory.clickSlot(this.held, state.output, false);
+      const st = this.getFurnace!(this.activeFurnacePos!);
+      const res = Inventory.clickSlot(this.held, st.output, false);
       this.held = res.held;
-      state.output = res.slot;
-      this.renderFurnace();
+      st.output = res.slot;
+      this.refreshFurnaceScreen(st);
     });
     row.appendChild(outputEl);
     panel.appendChild(row);
 
     const hotbarGrid = makeSlotGrid(HOTBAR_SIZE, 9, (i, r) => {
       this.onInventorySlotClick(i, r);
-      this.renderFurnace();
+      if (this.activeFurnacePos && this.getFurnace) this.refreshFurnaceScreen(this.getFurnace(this.activeFurnacePos));
     });
-    hotbarGrid.els.forEach((el, i) => renderSlotContent(el, this.inventory.getHotbar()[i]));
     panel.appendChild(hotbarGrid.root);
 
     const hint = document.createElement('div');
@@ -687,5 +886,19 @@ export class GameUI {
     this.screenRoot.appendChild(panel);
     animateIn(panel);
     this.screenRoot.onclick = () => this.close();
+
+    this.furnaceRefs = { inputEl, fuelEl, outputEl, progressFill, flame, hotbarEls: hotbarGrid.els };
+  }
+
+  private refreshFurnaceScreen(state: FurnaceState) {
+    this.renderHeldCursor();
+    const refs = this.furnaceRefs;
+    if (!refs) return;
+    renderSlotContent(refs.inputEl, state.input);
+    renderSlotContent(refs.fuelEl, state.fuel);
+    renderSlotContent(refs.outputEl, state.output);
+    refs.progressFill.style.width = `${state.smeltProgress * 100}%`;
+    refs.flame.textContent = state.burnTimeRemaining > 0 ? '🔥' : '·';
+    refs.hotbarEls.forEach((el, i) => renderSlotContent(el, this.inventory.getHotbar()[i]));
   }
 }
