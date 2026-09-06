@@ -1,6 +1,15 @@
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
 import type { Slot } from '../game/player/inventory';
 import type { GameMode } from '../game/player/gameMode';
+import type { FurnaceState } from '../game/crafting/furnaceManager';
+
+export interface ItemDropSaveData {
+  x: number;
+  y: number;
+  z: number;
+  itemId: string;
+  count: number;
+}
 
 export interface PlayerSaveData {
   x: number;
@@ -30,6 +39,13 @@ export interface WorldSaveData {
    * "x,y,z" -> blockId. Loading replays these on top of regenerated
    * chunks, matching the "seed + diff" design in CURRYCRAFT_PROMPT.md §14. */
   blockEdits: [string, number][];
+  /** Furnace contents (input/fuel/output/progress) keyed "x,y,z", same
+   * position format as blockEdits. Optional so saves from before this
+   * existed still load fine (furnaces just come back empty, as before). */
+  furnaceStates?: [string, FurnaceState][];
+  /** Item drops still sitting on the ground, uncollected. Optional for the
+   * same reason as furnaceStates. */
+  itemDrops?: ItemDropSaveData[];
 }
 
 interface CurryCraftDB extends DBSchema {

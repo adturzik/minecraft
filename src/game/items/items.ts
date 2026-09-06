@@ -213,6 +213,7 @@ const BLOCK_UI_COLOR: Partial<Record<number, [number, number, number]>> = {
   [BlockId.WoolBlue]: [50, 70, 190],
   [BlockId.WoolBlack]: [35, 35, 40],
   [BlockId.WoolGreen]: [70, 130, 50],
+  [BlockId.Bed]: [185, 45, 45],
 };
 
 function blockItem(id: number): ItemDef {
@@ -227,7 +228,12 @@ function blockItem(id: number): ItemDef {
   };
 }
 
-const BLOCK_ITEMS: ItemDef[] = RAW_BLOCKS.filter((b) => b.id !== BlockId.Air && b.id !== BlockId.Water && b.id !== BlockId.Lava).map((b) => blockItem(b.id));
+// FurnaceLit is block-entity state (see blockDefs.ts), not something the
+// player ever holds or places directly -- breaking one just yields 'furnace'
+// (its `drop`), same as breaking a regular furnace.
+const BLOCK_ITEMS: ItemDef[] = RAW_BLOCKS.filter(
+  (b) => b.id !== BlockId.Air && b.id !== BlockId.Water && b.id !== BlockId.Lava && b.id !== BlockId.FurnaceLit
+).map((b) => blockItem(b.id));
 
 export const ITEMS: ItemDef[] = [...BLOCK_ITEMS, ...NON_BLOCK_ITEMS];
 const BY_ID = new Map<string, ItemDef>(ITEMS.map((i) => [i.id, i]));

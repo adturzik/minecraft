@@ -127,6 +127,22 @@ function renderSettingsPanel(container: HTMLElement, onChange?: (s: Settings) =>
     row.append(lbl, input, valSpan);
     container.appendChild(row);
   }
+
+  const nightRow = document.createElement('div');
+  nightRow.style.cssText = `display:flex;align-items:center;gap:10px;margin:8px 0;color:#fff;font-family:${BODY_FONT};`;
+  const nightLbl = document.createElement('label');
+  nightLbl.textContent = 'Vypnout noc (stále den)';
+  nightLbl.style.cssText = 'width:200px;font-size:12px;';
+  const nightInput = document.createElement('input');
+  nightInput.type = 'checkbox';
+  nightInput.checked = settings.disableNight;
+  nightInput.addEventListener('change', () => {
+    settings.disableNight = nightInput.checked;
+    saveSettings(settings);
+    onChange?.(settings);
+  });
+  nightRow.append(nightLbl, nightInput);
+  container.appendChild(nightRow);
 }
 
 export class MainMenu {

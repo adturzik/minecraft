@@ -19,7 +19,7 @@ import { GameUI } from './ui/gameUI';
 import { FurnaceManager } from './game/crafting/furnaceManager';
 import { SurvivalState } from './game/player/survival';
 import type { GameMode } from './game/player/gameMode';
-import { GameClock } from './game/time/gameClock';
+import { GameClock, DAY_LENGTH_SECONDS } from './game/time/gameClock';
 import { SurvivalHUD } from './ui/hud/survivalHUD';
 import { MobManager } from './game/entities/mobManager';
 import type { Mob } from './game/entities/mob';
@@ -425,6 +425,7 @@ function startGame(opts: PlayOptions) {
     clock.elapsed = save.gameTimeElapsed;
     gameUI.inventory.slots = save.inventorySlots.slice() as Slot[];
     gameUI.refreshHotbar();
+    if (save.furnaceStates) furnaceManager.loadState(save.furnaceStates);
   }
 
   chunkManager.setCenter(player.position.x, player.position.z);
@@ -450,6 +451,14 @@ function startGame(opts: PlayOptions) {
       },
       inventorySlots: gameUI.inventory.slots,
       blockEdits: chunkManager.getEdits(),
+      furnaceStates: furnaceManager.serialize(),
+      itemDrops: itemDrops.map((d) => ({
+        x: d.sprite.position.x,
+        y: d.sprite.position.y,
+        z: d.sprite.position.z,
+        itemId: d.itemId,
+        count: d.count,
+      })),
     };
   }
 
@@ -694,6 +703,10 @@ function startGame(opts: PlayOptions) {
     }
   }
 
+  if (opts.existingSave?.itemDrops) {
+    for (const d of opts.existingSave.itemDrops) spawnItemDrop(d.x, d.y, d.z, d.itemId, d.count);
+  }
+
   /** Breaks the block at (x,y,z): removes it, plays the sound, drops the
    * harvested item (if the held tool meets the block's minimum tier) and
    * damages the held tool. Shared by the instant-break path (hardness 0
@@ -705,7 +718,7 @@ function startGame(opts: PlayOptions) {
     chunkManager.setBlock(x, y, z, BlockId.Air);
     scheduleFluidCheck(x, y, z);
     soundEngine.breakBlock();
-    if (brokenId === BlockId.Furnace) furnaceManager.remove(x, y, z);
+    if (brokenId === BlockId.Furnace || brokenId === BlockId.FurnaceLit) furnaceManager.remove(x, y, z);
     if (brokenId === BlockId.Torch) unregisterTorch(x, y, z);
 
     if (gameMode === 'creative') return; // block just vanishes: no drop, no tool wear (matches vanilla creative)
@@ -776,6 +789,7 @@ function startGame(opts: PlayOptions) {
         camera.fov = s.fov;
         camera.updateProjectionMatrix();
         player.controls.pointerSpeed = s.mouseSensitivity;
+        settings.disableNight = s.disableNight;
       });
       overlay.appendChild(mkBtn('Nastavení', () => {
         settingsBox.style.display = settingsBox.style.display === 'none' ? 'block' : 'none';
@@ -861,8 +875,18 @@ function startGame(opts: PlayOptions) {
         gameUI.openCraftingTable();
         return;
       }
-      if (targetId === BlockId.Furnace) {
+      if (targetId === BlockId.Furnace || targetId === BlockId.FurnaceLit) {
         gameUI.openFurnace(currentHit, (p) => furnaceManager.get(p.x, p.y, p.z));
+        return;
+      }
+      if (targetId === BlockId.Bed) {
+        if (!clock.getSky().isNight) {
+          gameUI.flashMessage('Můžeš spát jen v noci');
+        } else {
+          clock.elapsed = 0.25 * DAY_LENGTH_SECONDS; // jump to morning (same start fraction a new world begins at)
+          gameUI.flashMessage('Dobré ráno!');
+          soundEngine.craft();
+        }
         return;
       }
 
@@ -989,10 +1013,22 @@ function startGame(opts: PlayOptions) {
       }
     }
 
-    furnaceManager.tick(dt);
+    furnaceManager.tick(dt, (x, y, z, burning) => {
+      // Swaps the in-world block so a burning furnace actually emits light
+      // (see BlockId.FurnaceLit's lightEmission) -- guarded in case the
+      // player broke it in the same frame it would've changed state.
+      const cur = chunkManager.getBlock(x, y, z);
+      if (cur === BlockId.Furnace || cur === BlockId.FurnaceLit) {
+        chunkManager.setBlock(x, y, z, burning ? BlockId.FurnaceLit : BlockId.Furnace);
+      }
+    });
     gameUI.tickFurnaceUI();
 
-    clock.update(dt);
+    if (settings.disableNight) {
+      clock.elapsed = 0.25 * DAY_LENGTH_SECONDS; // pinned to full daylight every frame -- "disable night" setting
+    } else {
+      clock.update(dt);
+    }
     const sky = clock.getSky();
     (scene.background as THREE.Color).copy(sky.skyColor);
     (scene.fog as THREE.Fog).color.copy(sky.fogColor);

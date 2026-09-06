@@ -19,6 +19,7 @@ export interface ShapelessRecipe {
 export type Recipe = ShapedRecipe | ShapelessRecipe;
 
 const PLANKS = ['oak_planks', 'birch_planks', 'spruce_planks'];
+const ANY_WOOL = ['wool', 'wool_red', 'wool_yellow', 'wool_blue', 'wool_black', 'wool_green'];
 const LOG_TO_PLANKS: [string, string][] = [
   ['oak_log', 'oak_planks'],
   ['birch_log', 'birch_planks'],
@@ -142,6 +143,16 @@ export const RECIPES: Recipe[] = [
       ['cobblestone', 'cobblestone', 'cobblestone'],
     ],
     result: { itemId: 'furnace', count: 1 },
+  },
+  {
+    id: 'bed',
+    type: 'shaped',
+    requiresTable: true, // 3 wide -- doesn't fit the personal 2x2 grid
+    pattern: [
+      [ANY_WOOL, ANY_WOOL, ANY_WOOL],
+      [PLANKS, PLANKS, PLANKS],
+    ],
+    result: { itemId: 'bed', count: 1 },
   },
   {
     id: 'chest',

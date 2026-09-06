@@ -9,10 +9,11 @@ export interface FurnaceState {
   burnTimeRemaining: number;
   burnTimeTotal: number;
   smeltProgress: number; // 0..1
+  burning: boolean; // tracks lit/unlit transitions, see tick()'s onBurnChange
 }
 
 function newFurnace(): FurnaceState {
-  return { input: null, fuel: null, output: null, burnTimeRemaining: 0, burnTimeTotal: 0, smeltProgress: 0 };
+  return { input: null, fuel: null, output: null, burnTimeRemaining: 0, burnTimeTotal: 0, smeltProgress: 0, burning: false };
 }
 
 /** Furnace block-entity state keyed by world position. Only furnaces that
@@ -40,8 +41,24 @@ export class FurnaceManager {
     this.furnaces.delete(this.key(x, y, z));
   }
 
-  tick(dt: number) {
-    for (const f of this.furnaces.values()) {
+  /** For persistence (see saveSystem.ts's WorldSaveData.furnaceStates) --
+   * without this, quitting mid-smelt silently lost whatever was cooking. */
+  serialize(): [string, FurnaceState][] {
+    return Array.from(this.furnaces.entries());
+  }
+
+  /** Restores previously-saved furnace contents. Call once right after
+   * construction, before the first tick(). */
+  loadState(entries: [string, FurnaceState][]) {
+    this.furnaces = new Map(entries);
+  }
+
+  /** `onBurnChange` fires once per furnace whenever it ignites or burns out
+   * (not every tick) -- main.ts uses it to swap the in-world block between
+   * BlockId.Furnace and BlockId.FurnaceLit so a burning furnace actually
+   * lights up the room. */
+  tick(dt: number, onBurnChange?: (x: number, y: number, z: number, burning: boolean) => void) {
+    for (const [k, f] of this.furnaces) {
       const recipe = f.input ? getSmeltRecipe(f.input.itemId) : null;
 
       if (f.burnTimeRemaining <= 0 && recipe && f.fuel) {
@@ -76,6 +93,15 @@ export class FurnaceManager {
         }
       } else {
         f.smeltProgress = Math.max(0, f.smeltProgress - dt / 20); // slowly cool progress when unfueled
+      }
+
+      const nowBurning = f.burnTimeRemaining > 0;
+      if (nowBurning !== f.burning) {
+        f.burning = nowBurning;
+        if (onBurnChange) {
+          const [x, y, z] = k.split(',').map(Number);
+          onBurnChange(x, y, z, nowBurning);
+        }
       }
     }
   }
