@@ -5,6 +5,9 @@ export interface Settings {
   masterVolume: number;
   sfxVolume: number;
   musicVolume: number;
+  /** Pins the day/night cycle to full daylight (also stops hostile mobs
+   * from spawning, since that's gated on isNight -- see main.ts). */
+  disableNight: boolean;
 }
 
 const DEFAULTS: Settings = {
@@ -14,6 +17,7 @@ const DEFAULTS: Settings = {
   masterVolume: 0.8,
   sfxVolume: 0.8,
   musicVolume: 0.35,
+  disableNight: false,
 };
 
 const KEY = 'currycraft_settings';

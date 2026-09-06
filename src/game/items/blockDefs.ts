@@ -87,6 +87,8 @@ export enum BlockId {
   WoolBlue = 55,
   WoolBlack = 56,
   WoolGreen = 57,
+  Bed = 58,
+  FurnaceLit = 59,
 }
 
 const INF = Infinity;
@@ -150,6 +152,12 @@ export const RAW_BLOCKS: RawBlockDef[] = [
   { id: 55, key: 'wool_blue', name: 'Blue Wool', solid: true, opaque: true, transparent: false, renderType: 'cube', lightEmission: 0, hardness: 0.8, toolType: 'none', minToolTier: 'hand', drop: null, dropCount: [1, 1] },
   { id: 56, key: 'wool_black', name: 'Black Wool', solid: true, opaque: true, transparent: false, renderType: 'cube', lightEmission: 0, hardness: 0.8, toolType: 'none', minToolTier: 'hand', drop: null, dropCount: [1, 1] },
   { id: 57, key: 'wool_green', name: 'Green Wool', solid: true, opaque: true, transparent: false, renderType: 'cube', lightEmission: 0, hardness: 0.8, toolType: 'none', minToolTier: 'hand', drop: null, dropCount: [1, 1] },
+  { id: 58, key: 'bed', name: 'Bed', solid: true, opaque: true, transparent: false, renderType: 'cube', lightEmission: 0, hardness: 0.2, toolType: 'none', minToolTier: 'hand', drop: null, dropCount: [1, 1] },
+  // Block-entity state for a burning furnace, not a placeable item in its own
+  // right -- see blockDropItemId/BLOCK_ITEMS, which exclude it and treat it
+  // as a plain furnace drop. main.ts swaps a furnace between this id and
+  // Furnace as FurnaceManager's burnTimeRemaining crosses zero.
+  { id: 59, key: 'furnace_lit', name: 'Furnace', solid: true, opaque: true, transparent: false, renderType: 'cube', lightEmission: 13, hardness: 3.5, toolType: 'pickaxe', minToolTier: 'wood', drop: 'furnace', dropCount: [1, 1] },
 ];
 
 const BY_ID = new Map<number, RawBlockDef>(RAW_BLOCKS.map((b) => [b.id, b]));

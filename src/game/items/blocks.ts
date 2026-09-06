@@ -176,6 +176,35 @@ const T = {
       ctx.fillRect(px + 5, py + 6, 6, 5);
     }
   ),
+  // Actively-smelting furnace: same body, but the firebox opening is a
+  // bright coal-fire orange instead of dark ash, with a much stronger
+  // emissive glow so it actually reads as "lit" (and picks up bloom).
+  furnace_side_lit: atlasBuilder.register(
+    'furnace_side_lit',
+    (ctx, px, py, size, rng) => {
+      speckled([110, 110, 110], [90, 90, 90], 0.2)(ctx, px, py, size, rng);
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(px + 4, py + 5, 8, 7);
+      ctx.fillStyle = '#ff9020';
+      ctx.fillRect(px + 5, py + 6, 6, 5);
+    },
+    (ctx, px, py, size) => {
+      ctx.fillStyle = '#ffb040';
+      ctx.fillRect(px + 5, py + 6, 6, 5);
+    }
+  ),
+  bed_top: atlasBuilder.register('bed_top', (ctx, px, py, size, rng) => {
+    solid([185, 45, 45], 8)(ctx, px, py, size, rng);
+    ctx.fillStyle = '#f0ece0';
+    ctx.fillRect(px + 1, py + 1, size - 2, size / 3);
+    ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+    ctx.strokeRect(px + 1.5, py + 1.5, size - 3, size / 3 - 1);
+  }),
+  bed_side: atlasBuilder.register('bed_side', (ctx, px, py, size, rng) => {
+    solid([185, 45, 45], 8)(ctx, px, py, size, rng);
+    ctx.fillStyle = '#8a6a3f';
+    ctx.fillRect(px, py + size - 3, size, 3);
+  }),
   chest: atlasBuilder.register('chest', (ctx, px, py, size, rng) => {
     grain([150, 110, 60], [100, 75, 40])(ctx, px, py, size, rng);
     ctx.fillStyle = '#3a2a15';
@@ -269,6 +298,8 @@ const FACE_TILES: Record<number, { top: TileRect; side: TileRect; bottom: TileRe
   55: uniform(T.wool_blue),
   56: uniform(T.wool_black),
   57: uniform(T.wool_green),
+  58: topSideBottom(T.bed_top, T.bed_side, T.oak_planks),
+  59: topSideBottom(T.furnace_top, T.furnace_side_lit, T.furnace_top),
 };
 
 export const BLOCKS: BlockDef[] = RAW_BLOCKS.map((raw) => {

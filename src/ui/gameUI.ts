@@ -295,6 +295,9 @@ export class GameUI {
   private activeFurnacePos: WorldBlockTarget | null = null;
   private getFurnace: ((pos: WorldBlockTarget) => FurnaceState) | null = null;
 
+  private flashEl: HTMLDivElement | null = null;
+  private flashTimeout: number | null = null;
+
   private builtScreen: BuiltScreen = null;
   private characterPanel: CharacterPanel | null = null;
   private inventoryRefs: InventoryScreenRefs | null = null;
@@ -379,6 +382,22 @@ export class GameUI {
   giveItem(itemId: string, count = 1) {
     this.inventory.addItem(itemId, count);
     this.refreshHotbar();
+  }
+
+  /** Brief, auto-dismissing on-screen message (e.g. "you can only sleep at
+   * night") -- unlike the inventory/crafting screens, doesn't pause input. */
+  flashMessage(text: string, durationMs = 2200) {
+    if (!this.flashEl) {
+      this.flashEl = document.createElement('div');
+      this.flashEl.style.cssText = `position:fixed;top:18%;left:50%;transform:translateX(-50%);${panelStyle()}padding:8px 16px;font:14px ${BODY_FONT};color:#fff;z-index:1500;pointer-events:none;text-align:center;transition:opacity 0.3s ease-out;`;
+      document.body.appendChild(this.flashEl);
+    }
+    this.flashEl.textContent = text;
+    this.flashEl.style.opacity = '1';
+    if (this.flashTimeout !== null) window.clearTimeout(this.flashTimeout);
+    this.flashTimeout = window.setTimeout(() => {
+      if (this.flashEl) this.flashEl.style.opacity = '0';
+    }, durationMs);
   }
 
   /** Consumes one durability point off the currently-held tool, if any;
