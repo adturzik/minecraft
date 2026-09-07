@@ -210,8 +210,9 @@ function startGame(opts: PlayOptions) {
   // -- full-strength cast shadows under a tree canopy or next to any
   // building made the ground underneath too dark to make out. Below 1
   // blends the shadowed result back toward the unshadowed one instead of
-  // fully cutting the sun's direct contribution.
-  sunLight.shadow.intensity = 0.4;
+  // fully cutting the sun's direct contribution. (0.4 still read as too dark
+  // under tree canopy per user feedback -- dropped further.)
+  sunLight.shadow.intensity = 0.15;
   scene.add(sunLight);
   scene.add(sunLight.target);
   const hemiLight = new THREE.HemisphereLight(0x87ceeb, 0x3a2f1a, 0.55);
@@ -256,7 +257,7 @@ function startGame(opts: PlayOptions) {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.2;
+  renderer.toneMappingExposure = 1.4;
   app.innerHTML = '';
   app.appendChild(renderer.domElement);
 
@@ -1044,13 +1045,13 @@ function startGame(opts: PlayOptions) {
     sunLight.intensity = elevation * 1.1;
     const warmth = THREE.MathUtils.clamp(1 - elevation * 2.2, 0, 1);
     sunLight.color.copy(SUN_DAY_COLOR).lerp(SUN_WARM_COLOR, warmth);
-    // Raised from the original 0.14/0.46 -- shaded daytime spots (under a
-    // tree canopy, north sides of buildings, anywhere the shadow map blocks
-    // direct sun) had only this ambient term to fall back on, and it read
-    // as too dark to see well. Night floor (0.2) stays clearly dimmer than
-    // day so a torch's light -- baked tint plus its own PointLight -- still
-    // reads as making a real difference.
-    hemiLight.intensity = 0.2 + (1 - sky.ambientDarkness) * 0.55;
+    // Raised again (0.14/0.46 -> 0.2/0.55 -> this) -- shaded daytime spots
+    // (under a tree canopy, north sides of buildings, cave interiors) still
+    // read as too dark per user feedback. Night floor (0.35) stays a little
+    // dimmer than day so a torch's light -- baked tint plus its own
+    // PointLight -- still reads as making a real difference, but caves are
+    // no longer "can't see anything" dark.
+    hemiLight.intensity = 0.35 + (1 - sky.ambientDarkness) * 0.6;
     hemiLight.color.copy(sky.skyColor);
 
     // Sun/moon discs and stars sit at a fixed distance from the camera and

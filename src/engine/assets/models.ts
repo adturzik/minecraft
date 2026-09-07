@@ -59,9 +59,25 @@ export async function preloadModels(names: string[]): Promise<void> {
  * background regardless of whether anyone's called preloadModels). */
 export function getModel(name: string): THREE.Group | null {
   const base = cache.get(name);
-  if (base) return base.clone(true);
-  loadOnce(name).catch(() => null); // opportunistically start loading for next time
-  return null;
+  if (!base) {
+    loadOnce(name).catch(() => null); // opportunistically start loading for next time
+    return null;
+  }
+  const clone = base.clone(true);
+  // Object3D.clone() only duplicates the transform hierarchy -- materials
+  // are still shared by reference with every other clone of this model.
+  // Fine for a static prop, but every mob instance needs its own material:
+  // otherwise mutating one chicken's color for the hit-flash effect (see
+  // Entity.updateHitFlash) instantly recolors every chicken on screen, and
+  // can permanently stick on the wrong color if two flashes overlap.
+  // Textures aren't deep-cloned here, just the small material object, so
+  // this doesn't duplicate any GPU texture memory.
+  clone.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    mesh.material = Array.isArray(mesh.material) ? mesh.material.map((m) => m.clone()) : mesh.material.clone();
+  });
+  return clone;
 }
 
 export function isModelReady(name: string): boolean {
