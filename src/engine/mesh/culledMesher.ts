@@ -41,11 +41,10 @@ export type LightGetter = (x: number, y: number, z: number) => number;
 
 // Never fully pure black: at 0.04-0.18 unlit faces were still barely
 // distinguishable from the void behind them (read as "transparent holes"
-// rather than dark rock -- confirmed by screenshotting an enclosed unlit
-// room, where the near wall all but disappeared into the background). 0.4
-// keeps caves clearly darker than lit terrain while staying legible as
-// solid geometry against the sky/fog/void.
-const MIN_LIGHT_FACTOR = 0.58;
+// rather than dark rock). Raised twice more since (0.4 -> 0.58 -> this)
+// after "caves are still way too dark" feedback -- caves should be clearly
+// walkable/visible by eye, not just "technically not pitch black".
+const MIN_LIGHT_FACTOR = 0.78;
 
 /** Minimal per-block info the mesher needs. Both main thread (blocks.ts,
  * with real texture tiles) and the mesh worker (blockDefs.ts meta + a
@@ -109,9 +108,10 @@ const CROSS_CORNERS: [number, number, number][][] = [
  * the layer the face opens into -- two edge-adjacent cells plus the diagonal
  * between them. Gives Minecraft's "smooth lighting" corner-darkening look
  * (concave corners read as recessed) instead of every vertex on a face
- * sharing one flat baked shade. Returns 0.68 (fully occluded) .. 1.0 (open),
- * floored so corners never crush to pure black on top of the light/shade
- * multipliers already applied. */
+ * sharing one flat baked shade. Returns 0.82 (fully occluded) .. 1.0 (open) --
+ * raised from 0.68 after feedback that occluded corners (e.g. dirt right at
+ * a tree's base) read as too dark on top of the light/shade multipliers
+ * already applied. */
 function computeVertexAO(
   isOpaqueAt: (x: number, y: number, z: number) => boolean,
   nx: number,
@@ -142,7 +142,7 @@ function computeVertexAO(
   const s1 = isOpaqueAt(sideA[0], sideA[1], sideA[2]);
   const s2 = isOpaqueAt(sideB[0], sideB[1], sideB[2]);
   const ao = s1 && s2 ? 0 : 3 - (s1 ? 1 : 0) - (s2 ? 1 : 0) - (isOpaqueAt(cornerCell[0], cornerCell[1], cornerCell[2]) ? 1 : 0);
-  return 0.68 + 0.32 * (ao / 3);
+  return 0.82 + 0.18 * (ao / 3);
 }
 
 export function buildChunkMesh(
